@@ -8,17 +8,23 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}" />
   <link rel="stylesheet" href="{{ url_for('static', filename='css/owoo.css') }}" />
 </head>
-<body>
+<body data-can-modify="{{ '1' if user.can_modify else '0' }}" data-user-role="{{ user.role }}">
   <div class="app-layout">
+    <!-- Mobile Drawer Backdrop -->
+    <div id="sidebarBackdrop" class="sidebar-backdrop" onclick="toggleMobileSidebar(false)"></div>
+
     <!-- ==================== FIXED LEFT SIDEBAR ==================== -->
-    <aside class="sidebar">
+    <aside id="appSidebar" class="sidebar">
       <div>
         <div class="sidebar-brand">
-          <img src="{{ url_for('static', filename='img/owoo-logo.png') }}" alt="OWOO" />
-          <div class="sidebar-brand-text">
-            <div class="sidebar-brand-title">OWOO</div>
-            <div class="sidebar-brand-sub">Eco-Acoustic MRV</div>
+          <div class="sidebar-brand-left">
+            <img src="{{ url_for('static', filename='img/owoo-logo.png') }}" alt="OWOO" />
+            <div>
+              <div class="sidebar-brand-title">OWOO</div>
+              <div class="sidebar-brand-sub">Eco-Acoustic MRV</div>
+            </div>
           </div>
+          <button type="button" class="sidebar-close-mobile" onclick="toggleMobileSidebar(false)" aria-label="Tutup Menu">&times;</button>
         </div>
 
         <nav class="sidebar-nav">
@@ -51,31 +57,25 @@
             </svg>
             <span>Reports</span>
           </button>
+
+          <button type="button" class="nav-item" data-tab="setting" onclick="switchMainTab('setting')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>Setting</span>
+            <span id="navMqttDot" class="nav-status-dot"></span>
+          </button>
         </nav>
       </div>
 
       <div class="sidebar-footer">
-        <!-- ChirpStack MQTT Status Card -->
-        <div class="mqtt-mini-box" onclick="openMqttModal()" title="Klik untuk konfigurasi MQTT ChirpStack &amp; Simulator">
-          <div class="mqtt-mini-header">
-            <span style="color: var(--text-primary);">ChirpStack MQTT</span>
-            <span class="mqtt-status-indicator">
-              <span id="sidebarMqttDot" class="status-dot standby"></span>
-              <span id="sidebarMqttState" style="color: var(--neon-green);">Standby</span>
-            </span>
-          </div>
-          <div class="mqtt-mini-details">
-            <div id="sidebarMqttBroker" class="mono" style="font-size: 11px; color: var(--text-secondary);">127.0.0.1:1883</div>
-            <div id="sidebarMqttTopics" style="font-size: 10.5px; color: var(--text-muted); margin-top: 2px;">0 End Node Topics</div>
-          </div>
-        </div>
-
         <!-- Logged-in User Profile -->
         <div class="user-card">
           <div class="user-avatar">{{ (user.full_name[:2] if user and user.full_name else 'OW') | upper }}</div>
           <div class="user-meta">
             <div class="user-name" title="{{ user.full_name }}">{{ user.full_name }}</div>
-            <div class="user-role">{{ user.role }}</div>
+            <div class="user-role" title="{{ user.role }}">{{ user.role }}</div>
           </div>
           <a href="/logout" class="btn btn-sm btn-crimson" title="Logout Akun" style="padding: 6px 8px;">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2">
@@ -88,10 +88,19 @@
 
     <!-- ==================== MAIN CONTENT AREA ==================== -->
     <div class="main-area">
-      <!-- Top Header -->
+      <!-- Clean Top Header (Tanpa tombol Tambah End Node & Tanpa tombol MQTT Uplink) -->
       <header class="topbar">
         <div class="topbar-left">
+          <button type="button" class="mobile-menu-btn" onclick="toggleMobileSidebar(true)" aria-label="Buka Menu Navigasi">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.3">
+              <line x1="3" y1="6" x2="21" y2="6" stroke-linecap="round"/>
+              <line x1="3" y1="12" x2="21" y2="12" stroke-linecap="round"/>
+              <line x1="3" y1="18" x2="21" y2="18" stroke-linecap="round"/>
+            </svg>
+          </button>
+
           <h1 class="topbar-title" id="topbarTabTitle">Acoustic Overview Dashboard</h1>
+
           <span class="region-pill">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2">
               <path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/>
@@ -102,20 +111,13 @@
         </div>
 
         <div class="topbar-right">
-          <button type="button" class="btn btn-sm btn-ghost" onclick="openMqttModal()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="3"/>
-              <path d="M19.4 15a8 8 0 0 0 0-6M4.6 9a8 8 0 0 0 0 6M22 17a12 12 0 0 0 0-10M2 7a12 12 0 0 0 0 10" stroke-linecap="round"/>
-            </svg>
-            <span>MQTT &amp; Uji Uplink</span>
-          </button>
-
-          <button type="button" class="btn btn-sm btn-neon" onclick="openAddNodeModal()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4">
-              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
-            <span>Tambah End Node</span>
-          </button>
+          <span class="role-access-pill {{ '' if user.can_modify else 'viewer' }}" title="Peran Akun Aktif">
+            <span class="badge-dot" style="background: {{ '#00FF88' if user.can_modify else '#38BDF8' }};"></span>
+            <span>{{ user.role }}</span>
+            <span class="role-access-mode" style="opacity: 0.78;">
+              ({{ 'Akses Edit' if user.can_modify else 'Lihat & Unduh' }})
+            </span>
+          </span>
 
           <div class="clock-pill" id="liveClock">--:--:-- WIB</div>
         </div>
@@ -149,7 +151,6 @@
              TAB 1: OVERVIEW (LIVE TACTICAL MAP + ACI & NDSI CHARTS)
              ================================================================ -->
         <section id="tab-overview" class="tab-pane active">
-          <!-- KPI Summary Strip -->
           <div class="kpi-strip">
             <div class="glass-card kpi-card">
               <div>
@@ -205,16 +206,15 @@
             </div>
           </div>
 
-          <!-- Reference 2-Column Layout: Left Forest Map | Right Stacked ACI & NDSI Charts -->
           <div class="overview-grid">
             <!-- Left: Live Tactical Forest Map -->
             <div class="glass-card overview-map-card">
               <div class="map-hud-top">
                 <div class="map-hud-pill">
                   <span class="status-dot online"></span>
-                  <span>Live Map Terkini — Katingan Mentaya</span>
+                  <span>Live Map — Katingan Mentaya</span>
                 </div>
-                <button type="button" class="btn btn-sm btn-ghost" style="pointer-events: auto; background: rgba(5,19,14,0.86);" onclick="switchMainTab('map')">
+                <button type="button" class="btn btn-sm btn-ghost" style="pointer-events: auto; background: rgba(5,19,14,0.88);" onclick="switchMainTab('map')">
                   Buka Peta Lengkap &rarr;
                 </button>
               </div>
@@ -244,14 +244,13 @@
 
             <!-- Right: Stacked ACI & NDSI Real-Time Charts -->
             <div class="overview-charts-stack">
-              <!-- Top Chart: Acoustic Complexity Index (ACI) -->
               <div class="glass-card chart-card">
                 <div class="chart-header">
                   <div>
                     <div class="chart-title">Acoustic Complexity Index (ACI)</div>
                     <div class="chart-subtitle">Kompleksitas bio-akustik spektral hutan secara real-time</div>
                   </div>
-                  <div style="display: flex; align-items: center; gap: 12px;">
+                  <div class="chart-header-controls">
                     <select id="overviewNodeFilter" class="form-select" style="width: 175px; padding: 6px 10px; font-size: 12px;" onchange="handleOverviewFilterChange()">
                       <option value="">Semua End Node</option>
                     </select>
@@ -266,7 +265,6 @@
                 </div>
               </div>
 
-              <!-- Bottom Chart: Normalized Difference Soundscape Index (NDSI) -->
               <div class="glass-card chart-card">
                 <div class="chart-header">
                   <div>
@@ -287,21 +285,19 @@
         </section>
 
         <!-- ================================================================
-             TAB 2: MAPS (KATINGAN MENTAYA PROJECT + ADD NODE + INSPECTOR)
+             TAB 2: MAPS (KATINGAN MENTAYA PROJECT + ADD NODE KHUSUS DI SINI)
              ================================================================ -->
         <section id="tab-map" class="tab-pane">
           <div class="glass-card map-tab-toolbar">
-            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px;">
-              <div>
-                <div style="font-size: 15.5px; font-weight: 800;">Peta Sebaran End Node — Katingan Mentaya Project</div>
-                <div style="font-size: 12px; color: var(--text-secondary);">
-                  Klik marker atau zona heksagonal End Node pada peta untuk menampilkan ACI, NDSI, dan 3 kondisi klasifikasi audio.
-                </div>
+            <div>
+              <div style="font-size: 15.5px; font-weight: 800;">Peta Sebaran End Node — Katingan Mentaya Project</div>
+              <div style="font-size: 12px; color: var(--text-secondary);">
+                Klik marker atau zona heksagonal End Node pada peta untuk menampilkan ACI, NDSI, dan 3 kondisi klasifikasi audio.
               </div>
             </div>
 
-            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px;">
-              <select id="mapConditionFilter" class="form-select" style="width: 210px; padding: 8px 12px; font-size: 12.5px;" onchange="renderMapNodes()">
+            <div class="map-toolbar-actions">
+              <select id="mapConditionFilter" class="form-select" style="width: 215px; padding: 8px 12px; font-size: 12.5px;" onchange="renderMapNodes()">
                 <option value="all">Semua Kondisi End Node</option>
                 <option value="Threat">Chainsaw — Threat</option>
                 <option value="Biodiversity">Ambient Hutan — Biodiversity</option>
@@ -309,29 +305,34 @@
               </select>
 
               <button type="button" class="btn btn-ghost" onclick="recenterKatinganMap()">
-                Fokus Area Katingan Mentaya
+                Fokus Katingan Mentaya
               </button>
 
+              {% if user.can_modify %}
               <button type="button" class="btn btn-neon" onclick="openAddNodeModal()">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4">
                   <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                 </svg>
                 <span>Tambah End Node</span>
               </button>
+              {% else %}
+              <span class="badge badge-noise" style="padding: 8px 12px;">
+                <span class="badge-dot"></span>
+                Mode Lihat Saja ({{ user.role }})
+              </span>
+              {% endif %}
             </div>
           </div>
 
           <div class="map-workspace">
-            <!-- Full Katingan Mentaya Interactive Map -->
             <div class="glass-card full-map-container">
               <div id="pickCoordBanner" class="pick-coord-banner">
-                <span>Klik titik lokasi penempatan End Node pada area Katingan Mentaya Project...</span>
-                <button type="button" class="btn btn-sm" style="background:#041A11; color:#00FF88; padding:4px 10px;" onclick="cancelMapCoordinatePick()">Batal</button>
+                <span>Klik titik lokasi penempatan End Node di area Katingan Mentaya...</span>
+                <button type="button" class="btn btn-sm" style="background:#041A11; color:#00FF88; padding:5px 11px;" onclick="cancelMapCoordinatePick()">Batal</button>
               </div>
               <div id="katinganMap"></div>
             </div>
 
-            <!-- Right Inspector Panel: End Node List + Selected End Node Acoustic Detail -->
             <div class="glass-card node-inspector-panel">
               <div>
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
@@ -345,7 +346,6 @@
 
               <div class="inspector-divider"></div>
 
-              <!-- Selected Node Detail Container -->
               <div id="nodeDetailContainer" style="display: flex; flex-direction: column; gap: 13px;">
                 <div style="text-align: center; padding: 28px 12px; color: var(--text-secondary);">
                   Pilih salah satu End Node pada peta untuk melihat telemetri ACI, NDSI, dan klasifikasi audio.
@@ -356,10 +356,10 @@
         </section>
 
         <!-- ================================================================
-             TAB 3: REPORTS (ALL NODE REPORTS, CHARTS, SERVER LOGS & CSV)
+             TAB 3: REPORTS (SEPARATE CHARTS, SUMMARY, CONCLUSION, CSV & PDF)
              ================================================================ -->
         <section id="tab-reports" class="tab-pane">
-          <!-- Filter & CSV Export Toolbar -->
+          <!-- Filter & Export CSV / PDF Toolbar -->
           <div class="glass-card reports-filter-card">
             <div class="form-group">
               <label class="form-label">Filter End Node &amp; Lokasi</label>
@@ -393,11 +393,11 @@
               <input type="date" id="repDateTo" class="form-input" onchange="loadReportsData()" />
             </div>
 
-            <div style="display: flex; gap: 8px;">
+            <div class="reports-export-actions">
               <button type="button" class="btn btn-ghost" onclick="resetReportFilters()" title="Reset Filter">
                 Reset
               </button>
-              <button type="button" class="btn btn-neon" onclick="exportReportsCsv()">
+              <button type="button" class="btn btn-cyan" onclick="exportReportsCsv()">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                   <polyline points="7 10 12 15 17 10"/>
@@ -405,16 +405,24 @@
                 </svg>
                 <span>Ekspor CSV</span>
               </button>
+              <button type="button" class="btn btn-neon" onclick="exportReportsPdf()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                  <path d="M12 18v-6M9 15l3 3 3-3" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span>Ekspor PDF</span>
+              </button>
             </div>
           </div>
 
-          <!-- Reports Analytics Charts -->
-          <div class="reports-charts-grid">
-            <div class="glass-card chart-card" style="min-height: 295px;">
+          <!-- Separate ACI Chart & Separate NDSI Chart -->
+          <div class="reports-separate-charts-grid">
+            <div class="glass-card chart-card" style="min-height: 280px;">
               <div class="chart-header">
                 <div>
-                  <div class="chart-title">Grafik Log Historis ACI &amp; NDSI</div>
-                  <div class="chart-subtitle">Rekaman indeks bio-akustik yang tersimpan di server lokal Raspberry Pi</div>
+                  <div class="chart-title">Grafik Historis Acoustic Complexity Index (ACI)</div>
+                  <div class="chart-subtitle">Tren nilai ACI berdasarkan konfigurasi filter laporan</div>
                 </div>
                 <span class="badge badge-biodiversity">
                   <span class="badge-dot"></span>
@@ -422,29 +430,42 @@
                 </span>
               </div>
               <div class="chart-canvas-wrap">
-                <canvas id="reportTrendChart"></canvas>
+                <canvas id="reportAciChart"></canvas>
               </div>
             </div>
 
-            <div class="glass-card chart-card" style="min-height: 295px;">
+            <div class="glass-card chart-card" style="min-height: 280px;">
               <div class="chart-header">
                 <div>
-                  <div class="chart-title">Distribusi Klasifikasi per End Node</div>
-                  <div class="chart-subtitle">Chainsaw (Threat) • Ambient Hutan (Biodiversity) • Rain/Wind (Noise)</div>
+                  <div class="chart-title">Grafik Historis Soundscape Index (NDSI)</div>
+                  <div class="chart-subtitle">Tren rasio Biophony (+1) terhadap Anthrophony (-1)</div>
                 </div>
               </div>
               <div class="chart-canvas-wrap">
-                <canvas id="reportClassChart"></canvas>
+                <canvas id="reportNdsiChart"></canvas>
               </div>
+            </div>
+          </div>
+
+          <!-- Distribution Chart per End Node -->
+          <div class="glass-card chart-card" style="min-height: 295px; margin-bottom: 16px;">
+            <div class="chart-header">
+              <div>
+                <div class="chart-title">Grafik Distribusi Klasifikasi per End Node</div>
+                <div class="chart-subtitle">Perbandingan kejadian Ambient Hutan (Biodiversity), Chainsaw (Threat), dan Rain/Wind (Noise)</div>
+              </div>
+            </div>
+            <div class="chart-canvas-wrap">
+              <canvas id="reportClassChart"></canvas>
             </div>
           </div>
 
           <!-- Summary Table per End Node & Location -->
           <div class="glass-card data-table-card">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px;">
               <div>
                 <h3 style="font-size: 15.5px; font-weight: 800;">Ringkasan Report Tiap End Node &amp; Lokasi Penempatan</h3>
-                <p style="font-size: 12px; color: var(--text-secondary);">Rekapitulasi performa akustik dan deteksi kondisi tiap End Node di Katingan Mentaya Project</p>
+                <p style="font-size: 12px; color: var(--text-secondary);">Rekapitulasi performa akustik, kategori ACI, dan deteksi kondisi tiap End Node sesuai filter</p>
               </div>
             </div>
             <div class="table-scroll">
@@ -456,6 +477,7 @@
                     <th>Topic MQTT ChirpStack</th>
                     <th>Total Uplink</th>
                     <th>Avg ACI</th>
+                    <th>Kategori ACI</th>
                     <th>Avg NDSI</th>
                     <th>Threat (Chainsaw)</th>
                     <th>Biodiversity</th>
@@ -468,16 +490,35 @@
             </div>
           </div>
 
+          <!-- ACI Category Conclusion Card (Mirrors Final Section of Exported PDF!) -->
+          <div class="glass-card conclusion-card" id="reportConclusionCard">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px;">
+              <div>
+                <h3 style="font-size: 15.5px; font-weight: 800;">Kesimpulan Evaluasi Kategori ACI (Berdasarkan Data Filter)</h3>
+                <p style="font-size: 12px; color: var(--text-secondary);">
+                  Kriteria: Kategori Rendah (&lt; 0.50) &bull; Kategori Sedang (0.50 &ndash; 0.69) &bull; Kategori Tinggi (&ge; 0.70)
+                </p>
+              </div>
+              <div id="reportConclusionBadge"></div>
+            </div>
+            <div id="reportConclusionBody" style="font-size: 13px; color: var(--text-primary); line-height: 1.65;"></div>
+          </div>
+
           <!-- Detailed Telemetry Log Table -->
           <div class="glass-card data-table-card">
             <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px;">
               <div>
                 <h3 style="font-size: 15.5px; font-weight: 800;">Log Transmisi Data End Node (Database Lokal)</h3>
-                <p style="font-size: 12px; color: var(--text-secondary);">Seluruh paket data uplink yang masuk dapat diekspor langsung ke format CSV untuk audit MRV</p>
+                <p style="font-size: 12px; color: var(--text-secondary);">Seluruh paket data uplink yang tersimpan di server lokal Raspberry Pi</p>
               </div>
-              <button type="button" class="btn btn-sm btn-neon" onclick="exportReportsCsv()">
-                Download Laporan (.CSV)
-              </button>
+              <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                <button type="button" class="btn btn-sm btn-cyan" onclick="exportReportsCsv()">
+                  Download CSV
+                </button>
+                <button type="button" class="btn btn-sm btn-neon" onclick="exportReportsPdf()">
+                  Download Laporan PDF
+                </button>
+              </div>
             </div>
             <div class="table-scroll" style="max-height: 390px; overflow-y: auto;">
               <table class="owoo-table">
@@ -501,7 +542,7 @@
 
           <!-- Physical Local Raspberry Pi Server Log Stream -->
           <div class="glass-card data-table-card">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px;">
               <div>
                 <h3 style="font-size: 14.5px; font-weight: 800;">File Log Server Lokal Raspberry Pi (<span class="mono" style="color: var(--neon-green);">logs/telemetry_uplinks.log</span>)</h3>
                 <p style="font-size: 11.8px; color: var(--text-secondary);">Aliran pencatatan baris demi baris pada penyimpanan lokal server</p>
@@ -511,11 +552,197 @@
             <div id="localServerLogTerminal" class="server-log-terminal"></div>
           </div>
         </section>
+
+        <!-- ================================================================
+             TAB 4: SETTING (SERVER & CHIRPSTACK MQTT CONFIGURATION)
+             ================================================================ -->
+        <section id="tab-setting" class="tab-pane">
+          <div class="settings-grid">
+            <!-- Left Card: ChirpStack MQTT Broker Configuration -->
+            <div class="glass-card settings-card">
+              <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px;">
+                <div>
+                  <h2 style="font-size: 17px; font-weight: 800;">Konfigurasi Server MQTT ChirpStack</h2>
+                  <p style="font-size: 12px; color: var(--text-secondary);">
+                    Pengaturan koneksi subscriber LoRaWAN pada Raspberry Pi untuk menerima data End Node
+                  </p>
+                </div>
+                <span id="settingMqttBadge" class="badge badge-noise">
+                  <span class="badge-dot"></span>
+                  <span id="settingMqttStateText">Memeriksa...</span>
+                </span>
+              </div>
+
+              {% if not user.can_modify %}
+              <div class="readonly-notice">
+                <strong>Mode Baca Saja ({{ user.role }}):</strong> Akun Anda hanya dapat melihat status konfigurasi server dan mengunduh laporan. Perubahan konfigurasi server hanya dapat dilakukan oleh <strong>Conservation Operator</strong> atau <strong>IoT Network Engineer</strong>.
+              </div>
+              {% endif %}
+
+              <form id="mqttSettingsForm" class="auth-form">
+                <div class="form-row-2">
+                  <div class="form-group">
+                    <label class="form-label">MQTT Broker Host / IP Lokal</label>
+                    <input
+                      type="text"
+                      id="mqttHostInput"
+                      class="form-input mono"
+                      placeholder="127.0.0.1"
+                      required
+                      {{ '' if user.can_modify else 'disabled' }}
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">MQTT Port</label>
+                    <input
+                      type="number"
+                      id="mqttPortInput"
+                      class="form-input mono"
+                      placeholder="1883"
+                      required
+                      {{ '' if user.can_modify else 'disabled' }}
+                    />
+                  </div>
+                </div>
+
+                <div class="form-row-2">
+                  <div class="form-group">
+                    <label class="form-label">MQTT Username (Opsional)</label>
+                    <input
+                      type="text"
+                      id="mqttUserInput"
+                      class="form-input"
+                      placeholder="Kosongkan jika anonim"
+                      {{ '' if user.can_modify else 'disabled' }}
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">MQTT Password (Opsional)</label>
+                    <input
+                      type="password"
+                      id="mqttPassInput"
+                      class="form-input"
+                      placeholder="{{ 'Kosongkan jika tanpa password' if user.can_modify else 'Disembunyikan' }}"
+                      {{ '' if user.can_modify else 'disabled' }}
+                    />
+                  </div>
+                </div>
+
+                <label style="display: flex; align-items: flex-start; gap: 10px; font-size: 12.5px; color: var(--text-secondary); cursor: {{ 'pointer' if user.can_modify else 'not-allowed' }};">
+                  <input
+                    type="checkbox"
+                    id="mqttStrictKeyCheck"
+                    style="accent-color: var(--neon-green); width: 16px; height: 16px; margin-top: 2px; flex-shrink: 0;"
+                    {{ '' if user.can_modify else 'disabled' }}
+                  />
+                  <span>Wajibkan verifikasi payload <span class="mono">node_key</span> / tanda tangan HMAC-SHA256 pada setiap paket uplink aplikasi</span>
+                </label>
+
+                {% if user.can_modify %}
+                <div style="display: flex; justify-content: flex-end; margin-top: 6px;">
+                  <button type="submit" class="btn btn-neon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                      <polyline points="17 21 17 13 7 13 7 21"/>
+                      <polyline points="7 3 7 8 15 8"/>
+                    </svg>
+                    <span>Simpan &amp; Hubungkan Ulang Server</span>
+                  </button>
+                </div>
+                {% endif %}
+              </form>
+            </div>
+
+            <!-- Right Card: Subscribed Topics & Role Access Info -->
+            <div style="display: flex; flex-direction: column; gap: 18px;">
+              <div class="glass-card settings-card">
+                <div>
+                  <h3 style="font-size: 15.5px; font-weight: 800;">Daftar Topic MQTT ChirpStack Aktif</h3>
+                  <p style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
+                    Pola subscribe: <span class="mono" style="color: var(--neon-green);">application/&lt;appid&gt;/device/&lt;devui&gt;/event/up</span>
+                  </p>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                  <div class="metric-mini-card">
+                    <div style="font-size: 11px; color: var(--text-secondary);">Broker Aktif</div>
+                    <div id="settingBrokerAddr" class="mono" style="font-size: 14px; font-weight: 800; color: var(--text-primary); margin-top: 3px;">127.0.0.1:1883</div>
+                  </div>
+                  <div class="metric-mini-card">
+                    <div style="font-size: 11px; color: var(--text-secondary);">Jumlah Topic End Node</div>
+                    <div id="settingTopicsCount" class="mono" style="font-size: 14px; font-weight: 800; color: var(--neon-green); margin-top: 3px;">0 Topic</div>
+                  </div>
+                </div>
+
+                <div id="mqttActiveTopicsList" class="server-log-terminal" style="max-height: 165px; font-size: 11px;"></div>
+              </div>
+
+              <div class="glass-card settings-card">
+                <div>
+                  <h3 style="font-size: 15.5px; font-weight: 800;">Hak Akses Peran Akun Sistem</h3>
+                  <p style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
+                    Anda sedang masuk sebagai <strong style="color: var(--neon-green);">{{ user.full_name }}</strong> (<span class="mono">{{ user.role }}</span>)
+                  </p>
+                </div>
+
+                <div class="role-matrix-list">
+                  <div class="role-matrix-item">
+                    <div>
+                      <div style="font-weight: 700; font-size: 12.8px;">Conservation Operator &amp; IoT Network Engineer</div>
+                      <div style="font-size: 11.2px; color: var(--text-secondary);">Monitoring penuh, ekspor laporan CSV/PDF, tambah/hapus End Node, &amp; konfigurasi server</div>
+                    </div>
+                    <span class="badge badge-biodiversity">Read &amp; Write</span>
+                  </div>
+                  <div class="role-matrix-item">
+                    <div>
+                      <div style="font-weight: 700; font-size: 12.8px;">Forest Ranger &amp; MRV Auditor</div>
+                      <div style="font-size: 11.2px; color: var(--text-secondary);">Melihat seluruh peta/grafik monitoring &amp; mengunduh laporan CSV/PDF (tanpa ubah data)</div>
+                    </div>
+                    <span class="badge badge-noise">View &amp; Download</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
       </main>
     </div>
+
+    <!-- ==================== MOBILE STICKY BOTTOM NAVIGATION ==================== -->
+    <nav class="mobile-bottom-nav" aria-label="Navigasi Bawah Mobile">
+      <button type="button" class="mobile-nav-btn active" data-tab="overview" onclick="switchMainTab('overview')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/>
+          <rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/>
+        </svg>
+        <span>Dashboard</span>
+      </button>
+      <button type="button" class="mobile-nav-btn" data-tab="map" onclick="switchMainTab('map')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" stroke-linejoin="round"/>
+          <line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/>
+        </svg>
+        <span>Map</span>
+      </button>
+      <button type="button" class="mobile-nav-btn" data-tab="reports" onclick="switchMainTab('reports')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/>
+        </svg>
+        <span>Reports</span>
+      </button>
+      <button type="button" class="mobile-nav-btn" data-tab="setting" onclick="switchMainTab('setting')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        <span>Setting</span>
+      </button>
+    </nav>
   </div>
 
-  <!-- ==================== MODAL 1: TAMBAH END NODE ==================== -->
+  <!-- ==================== MODAL TAMBAH END NODE (KHUSUS PERAN EDITOR) ==================== -->
+  {% if user.can_modify %}
   <div id="addNodeModal" class="modal-backdrop">
     <div class="glass-card modal-dialog">
       <div class="modal-header">
@@ -552,11 +779,11 @@
         </div>
 
         <div>
-          <button type="button" class="btn btn-sm btn-ghost" style="width: 100%;" onclick="startMapCoordinatePick()">
+          <button type="button" class="btn btn-sm btn-ghost" style="width: 100%; white-space: normal; text-align: center;" onclick="startMapCoordinatePick()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/>
             </svg>
-            <span>Pilih Titik Lokasi Penempatan Langsung dari Peta Katingan Mentaya</span>
+            <span>Pilih Titik Lokasi Penempatan Langsung di Peta</span>
           </button>
         </div>
 
@@ -572,7 +799,7 @@
         </div>
 
         <div class="form-group">
-          <div style="display: flex; align-items: center; justify-content: space-between;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
             <label class="form-label">Kunci Unik End Node (Node Key / AppKey)</label>
             <button type="button" style="background:none; border:none; color:var(--neon-green); font-size:11.5px; font-weight:700; cursor:pointer;" onclick="generateRandomNodeKey()">
               + Generate Kunci Baru
@@ -590,97 +817,14 @@
 
         <div id="addNodeError" class="auth-alert"></div>
 
-        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px;">
+        <div style="display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 6px;">
           <button type="button" class="btn btn-ghost" onclick="closeAddNodeModal()">Batal</button>
           <button type="submit" class="btn btn-neon">Simpan &amp; Subscribe MQTT</button>
         </div>
       </form>
     </div>
   </div>
-
-  <!-- ==================== MODAL 2: KONFIGURASI MQTT CHIRPSTACK & SIMULATOR ==================== -->
-  <div id="mqttModal" class="modal-backdrop">
-    <div class="glass-card modal-dialog" style="max-width: 620px;">
-      <div class="modal-header">
-        <div>
-          <div class="modal-title">ChirpStack LoRaWAN MQTT Broker &amp; Uplink Tester</div>
-          <div style="font-size: 12px; color: var(--text-secondary);">
-            Konfigurasi koneksi ke broker MQTT ChirpStack lokal di Raspberry Pi
-          </div>
-        </div>
-        <button type="button" class="modal-close" onclick="closeMqttModal()">&times;</button>
-      </div>
-
-      <form id="mqttSettingsForm" class="auth-form">
-        <div class="form-row-2">
-          <div class="form-group">
-            <label class="form-label">MQTT Broker Host / IP</label>
-            <input type="text" id="mqttHostInput" class="form-input mono" placeholder="127.0.0.1" required />
-          </div>
-          <div class="form-group">
-            <label class="form-label">MQTT Port</label>
-            <input type="number" id="mqttPortInput" class="form-input mono" placeholder="1883" required />
-          </div>
-        </div>
-
-        <div class="form-row-2">
-          <div class="form-group">
-            <label class="form-label">MQTT Username (Opsional)</label>
-            <input type="text" id="mqttUserInput" class="form-input" placeholder="Kosongkan jika anonim" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">MQTT Password (Opsional)</label>
-            <input type="password" id="mqttPassInput" class="form-input" placeholder="Kosongkan jika tanpa password" />
-          </div>
-        </div>
-
-        <label style="display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--text-secondary); cursor: pointer;">
-          <input type="checkbox" id="mqttStrictKeyCheck" style="accent-color: var(--neon-green); width: 15px; height: 15px;" />
-          <span>Wajibkan verifikasi payload <span class="mono">node_key</span> / HMAC-SHA256 pada setiap paket aplikasi</span>
-        </label>
-
-        <div style="display: flex; justify-content: flex-end;">
-          <button type="submit" class="btn btn-sm btn-neon">Simpan &amp; Hubungkan Ulang Broker</button>
-        </div>
-      </form>
-
-      <div class="inspector-divider" style="margin: 18px 0;"></div>
-
-      <!-- Quick Live Packet Simulator for Demo / Testing -->
-      <div>
-        <div style="font-size: 14px; font-weight: 800; margin-bottom: 4px;">Simulasi Pengiriman Paket End Node (Uji Real-Time)</div>
-        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">
-          Mengirim paket JSON ChirpStack (<span class="mono">ACI</span>, <span class="mono">NDSI</span>, dan <span class="mono">Klasifikasi Audio</span>) ke topic <span class="mono">application/&lt;appid&gt;/device/&lt;devui&gt;/event/up</span>:
-        </div>
-
-        <div class="form-group" style="margin-bottom: 12px;">
-          <label class="form-label">Pilih Target End Node</label>
-          <select id="simTargetNodeSelect" class="form-select"></select>
-        </div>
-
-        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px;">
-          <button type="button" class="btn btn-ghost" onclick="triggerQuickSimulation('biodiversity')">
-            Ambient Hutan
-          </button>
-          <button type="button" class="btn btn-crimson" onclick="triggerQuickSimulation('threat')">
-            Chainsaw (Threat)
-          </button>
-          <button type="button" class="btn btn-cyan" onclick="triggerQuickSimulation('noise')">
-            Rain/Wind (Noise)
-          </button>
-        </div>
-      </div>
-
-      <div class="inspector-divider" style="margin: 18px 0;"></div>
-
-      <div>
-        <div style="font-size: 12px; font-weight: 700; color: var(--text-secondary); margin-bottom: 6px;">
-          Daftar Topic MQTT Aktif yang Di-Subscribe Server:
-        </div>
-        <div id="mqttActiveTopicsList" class="server-log-terminal" style="max-height: 115px; font-size: 11px;"></div>
-      </div>
-    </div>
-  </div>
+  {% endif %}
 
   <!-- Toast Stack -->
   <div id="toastStack" class="toast-stack"></div>

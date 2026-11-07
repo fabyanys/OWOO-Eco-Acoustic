@@ -173,15 +173,19 @@ def init_db():
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
-                "OWOO Field Ranger",
+                "OWOO Conservation Admin",
                 "admin",
                 "admin@owoo.eco",
                 generate_password_hash("owoo2026"),
-                "Lead MRV Coordinator",
+                "Conservation Operator",
                 now_str,
             ),
         )
         write_server_log("INFO", "Initialized default user account 'admin' in SQLite database.")
+    else:
+        cur.execute(
+            "UPDATE users SET role = 'Conservation Operator' WHERE role = 'Lead MRV Coordinator'"
+        )
 
     # Seed realistic Katingan Mentaya Project End Nodes & 24h Eco-Acoustic Telemetry if empty
     cur.execute("SELECT COUNT(*) AS cnt FROM end_nodes")
@@ -377,11 +381,32 @@ def _seed_katingan_mentaya_data(cur):
     write_server_log("INFO", "Seeded 4 Katingan Mentaya Project End Nodes & 24h Eco-Acoustic logs.")
 
 
-# ---------------- USER AUTHENTICATION ---------------- #
+# ---------------- USER AUTHENTICATION & ROLE PERMISSIONS ---------------- #
+
+EDITOR_ROLES = {"conservation operator", "iot network engineer", "iot network engineering"}
+VIEWER_ROLES = {"forest ranger", "mrv auditor", "mpv auditor"}
+
+
+def normalize_user_role(raw_role: str) -> str:
+    r = (raw_role or "").strip().lower()
+    if "iot" in r or "network" in r:
+        return "IoT Network Engineer"
+    if "ranger" in r:
+        return "Forest Ranger"
+    if "auditor" in r or "mrv" in r or "mpv" in r:
+        return "MRV Auditor"
+    return "Conservation Operator"
+
+
+def can_user_modify(role: str | None) -> bool:
+    r = (role or "").strip().lower()
+    return r in EDITOR_ROLES
+
 
 def create_user(full_name: str, username: str, email: str, password: str, role: str = "Conservation Operator"):
     username_clean = username.strip().lower()
     email_clean = email.strip().lower()
+    role_clean = normalize_user_role(role)
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     pw_hash = generate_password_hash(password)
 
@@ -393,11 +418,11 @@ def create_user(full_name: str, username: str, email: str, password: str, role: 
             INSERT INTO users (full_name, username, email, password_hash, role, created_at)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (full_name.strip(), username_clean, email_clean, pw_hash, role.strip(), now_str),
+            (full_name.strip(), username_clean, email_clean, pw_hash, role_clean, now_str),
         )
         conn.commit()
         user_id = cur.lastrowid
-        write_server_log("AUTH", f"New user registered: username='{username_clean}', email='{email_clean}'")
+        write_server_log("AUTH", f"New user registered: username='{username_clean}', role='{role_clean}'")
         return get_user_by_id(user_id)
     except sqlite3.IntegrityError as exc:
         err = str(exc).lower()
@@ -419,13 +444,14 @@ def authenticate_user(identifier: str, password: str):
             (ident, ident),
         ).fetchone()
         if row and check_password_hash(row["password_hash"], password):
-            write_server_log("AUTH", f"User login successful: '{row['username']}'")
+            write_server_log("AUTH", f"User login successful: '{row['username']}' ({row['role']})")
             return {
                 "id": row["id"],
                 "full_name": row["full_name"],
                 "username": row["username"],
                 "email": row["email"],
                 "role": row["role"],
+                "can_modify": can_user_modify(row["role"]),
                 "created_at": row["created_at"],
             }
         return None
@@ -440,7 +466,11 @@ def get_user_by_id(user_id: int):
             "SELECT id, full_name, username, email, role, created_at FROM users WHERE id = ?",
             (user_id,),
         ).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        d = dict(row)
+        d["can_modify"] = can_user_modify(d.get("role"))
+        return d
     finally:
         conn.close()
 
@@ -731,11 +761,50 @@ def get_timeseries_data(node_id: int | None = None, limit: int = 48):
         conn.close()
 
 
-def get_node_summary_reports():
+def get_node_summary_reports(
+    node_id: int | None = None,
+    condition: str | None = None,
+    search: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+):
+    node_clauses = []
+    node_params = []
+    join_clauses = ["t.node_id = n.id"]
+    join_params = []
+
+    if node_id:
+        node_clauses.append("n.id = ?")
+        node_params.append(int(node_id))
+
+    if search and search.strip():
+        q = f"%{search.strip()}%"
+        node_clauses.append(
+            "(n.name LIKE ? OR n.location_name LIKE ? OR n.dev_eui LIKE ? OR n.app_id LIKE ?)"
+        )
+        node_params.extend([q, q, q, q])
+
+    if condition and condition.lower() != "all":
+        join_clauses.append("LOWER(t.condition) = LOWER(?)")
+        join_params.append(condition.strip())
+
+    if date_from and date_from.strip():
+        df = f"{date_from.strip()} 00:00:00" if len(date_from.strip()) == 10 else date_from.strip()
+        join_clauses.append("t.recorded_at >= ?")
+        join_params.append(df)
+
+    if date_to and date_to.strip():
+        dt = f"{date_to.strip()} 23:59:59" if len(date_to.strip()) == 10 else date_to.strip()
+        join_clauses.append("t.recorded_at <= ?")
+        join_params.append(dt)
+
+    where_sql = f"WHERE {' AND '.join(node_clauses)}" if node_clauses else ""
+    join_sql = " AND ".join(join_clauses)
+
     conn = get_db()
     try:
         rows = conn.execute(
-            """
+            f"""
             SELECT
                 n.id AS node_id,
                 n.name AS node_name,
@@ -752,16 +821,19 @@ def get_node_summary_reports():
                 n.last_seen,
                 COUNT(t.id) AS total_uplinks,
                 ROUND(AVG(t.aci), 3) AS avg_aci,
+                ROUND(MIN(t.aci), 3) AS min_aci,
                 ROUND(MAX(t.aci), 3) AS max_aci,
                 ROUND(AVG(t.ndsi), 3) AS avg_ndsi,
                 SUM(CASE WHEN t.condition = 'Threat' THEN 1 ELSE 0 END) AS threat_count,
                 SUM(CASE WHEN t.condition = 'Biodiversity' THEN 1 ELSE 0 END) AS biodiversity_count,
                 SUM(CASE WHEN t.condition = 'Noise' THEN 1 ELSE 0 END) AS noise_count
             FROM end_nodes n
-            LEFT JOIN telemetry_logs t ON t.node_id = n.id
+            LEFT JOIN telemetry_logs t ON {join_sql}
+            {where_sql}
             GROUP BY n.id
             ORDER BY n.id ASC
-            """
+            """,
+            join_params + node_params,
         ).fetchall()
         return [dict(r) for r in rows]
     finally:

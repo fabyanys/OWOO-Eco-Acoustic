@@ -22,6 +22,7 @@ from flask import (
 
 import database as db
 from mqtt_service import broadcaster, mqtt_manager
+from pdf_report import generate_pdf_report_bytes
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TILES_DIR = os.path.join(BASE_DIR, "data", "tiles")
@@ -54,7 +55,7 @@ _tile_http = requests.Session()
 _tile_http.headers.update({"User-Agent": "OWOO-EcoAcoustic-RaspberryPi/1.0"})
 
 
-# ---------------- AUTH HELPERS ---------------- #
+# ---------------- AUTH & RBAC HELPERS ---------------- #
 
 def get_current_user():
     uid = session.get("user_id")
@@ -74,6 +75,42 @@ def login_required(fn):
         return fn(*args, **kwargs)
 
     return wrapper
+
+
+def editor_required(fn):
+    """
+    Hanya mengizinkan Conservation Operator dan IoT Network Engineer untuk mengubah data
+    (menambah/menghapus End Node maupun mengubah konfigurasi server MQTT).
+    Forest Ranger dan MRV Auditor hanya memiliki akses lihat & unduh laporan.
+    """
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        user = get_current_user()
+        if not user:
+            return jsonify({"ok": False, "error": "Sesi berakhir. Silakan login kembali."}), 401
+        if not user.get("can_modify"):
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "error": f"Akses ditolak: Peran '{user.get('role')}' hanya dapat melihat data dan mengunduh laporan.",
+                    }
+                ),
+                403,
+            )
+        return fn(*args, **kwargs)
+
+    return wrapper
+
+
+def _sanitize_node_for_user(node: dict | None, user: dict | None) -> dict | None:
+    if not node:
+        return None
+    out = dict(node)
+    if not user or not user.get("can_modify"):
+        raw_k = out.get("node_key") or ""
+        out["node_key"] = f"{raw_k[:4]}••••••••••••{raw_k[-4:]}" if len(raw_k) >= 8 else "••••••••"
+    return out
 
 
 # ---------------- PAGE ROUTES ---------------- #
@@ -154,7 +191,7 @@ def api_register():
 @login_required
 def api_bootstrap():
     user = get_current_user()
-    nodes = db.list_end_nodes()
+    nodes = [_sanitize_node_for_user(n, user) for n in db.list_end_nodes()]
     timeseries = db.get_timeseries_data(limit=48)
     summaries = db.get_node_summary_reports()
     logs = db.query_telemetry_logs(limit=150)
@@ -186,11 +223,13 @@ def api_timeseries():
 @app.route("/api/nodes", methods=["GET"])
 @login_required
 def api_list_nodes():
-    return jsonify({"ok": True, "nodes": db.list_end_nodes()})
+    user = get_current_user()
+    nodes = [_sanitize_node_for_user(n, user) for n in db.list_end_nodes()]
+    return jsonify({"ok": True, "nodes": nodes})
 
 
 @app.route("/api/nodes", methods=["POST"])
-@login_required
+@editor_required
 def api_create_node():
     data = request.get_json(silent=True) or {}
     name = (data.get("name") or "").strip()
@@ -222,7 +261,7 @@ def api_create_node():
             node_key=node_key,
         )
         mqtt_manager.sync_subscriptions()
-        broadcaster.publish("node_added", {"node": node, "mqtt": mqtt_manager.get_status()})
+        broadcaster.publish("node_added", {"node_id": node["id"], "mqtt": mqtt_manager.get_status()})
         return jsonify({"ok": True, "node": node, "mqtt": mqtt_manager.get_status()})
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -231,16 +270,17 @@ def api_create_node():
 @app.route("/api/nodes/<int:node_id>", methods=["GET"])
 @login_required
 def api_node_detail(node_id: int):
+    user = get_current_user()
     node = db.get_end_node(node_id)
     if not node:
         return jsonify({"ok": False, "error": "End Node tidak ditemukan."}), 404
     history = db.get_timeseries_data(node_id=node_id, limit=30)
     recent_logs = db.query_telemetry_logs(node_id=node_id, limit=25)
-    return jsonify({"ok": True, "node": node, "history": history, "logs": recent_logs})
+    return jsonify({"ok": True, "node": _sanitize_node_for_user(node, user), "history": history, "logs": recent_logs})
 
 
 @app.route("/api/nodes/<int:node_id>", methods=["DELETE"])
-@login_required
+@editor_required
 def api_delete_node(node_id: int):
     removed = db.delete_end_node(node_id)
     if not removed:
@@ -250,83 +290,7 @@ def api_delete_node(node_id: int):
     return jsonify({"ok": True, "removed": removed, "mqtt": mqtt_manager.get_status()})
 
 
-@app.route("/api/nodes/<int:node_id>/simulate", methods=["POST"])
-@login_required
-def api_simulate_node_uplink(node_id: int):
-    node = db.get_end_node(node_id)
-    if not node:
-        return jsonify({"ok": False, "error": "End Node tidak ditemukan."}), 404
-
-    data = request.get_json(silent=True) or {}
-    preset = (data.get("preset") or "biodiversity").lower()
-
-    if "aci" in data and "ndsi" in data and "classification" in data:
-        aci = float(data["aci"])
-        ndsi = float(data["ndsi"])
-        classification = str(data["classification"])
-        confidence = float(data.get("confidence", 0.95))
-    elif preset == "threat" or preset == "chainsaw":
-        aci = round(0.42 + (secrets.randbelow(120) / 1000.0), 3)
-        ndsi = round(-0.68 + (secrets.randbelow(200) / 1000.0), 3)
-        classification = "Chainsaw"
-        confidence = round(0.92 + (secrets.randbelow(70) / 1000.0), 3)
-    elif preset == "noise" or preset == "rain":
-        aci = round(0.53 + (secrets.randbelow(110) / 1000.0), 3)
-        ndsi = round(-0.08 + (secrets.randbelow(220) / 1000.0), 3)
-        classification = "Rain/Wind"
-        confidence = round(0.88 + (secrets.randbelow(90) / 1000.0), 3)
-    else:
-        aci = round(0.72 + (secrets.randbelow(210) / 1000.0), 3)
-        ndsi = round(0.66 + (secrets.randbelow(260) / 1000.0), 3)
-        classification = "Ambient Hutan"
-        confidence = round(0.93 + (secrets.randbelow(65) / 1000.0), 3)
-
-    chirpstack_frame = {
-        "deduplicationId": secrets.token_hex(8),
-        "time": datetime.now().isoformat(),
-        "deviceInfo": {
-            "applicationId": node["app_id"],
-            "devEui": node["dev_eui"],
-            "deviceName": node["name"],
-        },
-        "object": {
-            "aci": aci,
-            "ndsi": ndsi,
-            "classification": classification,
-            "confidence": confidence,
-            "node_key": node["node_key"],
-        },
-        "rxInfo": [
-            {
-                "rssi": -74 - secrets.randbelow(28),
-                "snr": round(5.5 + (secrets.randbelow(60) / 10.0), 1),
-            }
-        ],
-    }
-
-    res = mqtt_manager.publish_or_simulate_uplink(node, chirpstack_frame)
-    return jsonify({"ok": True, "result": res, "node": db.get_end_node(node_id)})
-
-
-@app.route("/api/uplink/ingest", methods=["POST"])
-def api_external_uplink_ingest():
-    """
-    HTTP fallback endpoint for CLI testing (`simulate_mqtt.py`) when local Mosquitto broker is not running.
-    Requires matching `topic` (`application/<appid>/device/<devui>/event/up`) and valid `node_key`.
-    """
-    data = request.get_json(silent=True) or {}
-    topic = (data.get("topic") or "").strip()
-    payload = data.get("payload")
-    if not topic or not isinstance(payload, dict):
-        return jsonify({"ok": False, "error": "Field 'topic' dan 'payload' JSON diperlukan."}), 400
-
-    entry = mqtt_manager.process_incoming_topic_message(topic, json.dumps(payload).encode("utf-8"))
-    if not entry:
-        return jsonify({"ok": False, "error": "Uplink ditolak (topic belum terdaftar atau kunci tidak cocok)."}), 400
-    return jsonify({"ok": True, "entry": entry})
-
-
-# ---------------- REPORTS, SERVER LOGS & CSV EXPORT ---------------- #
+# ---------------- REPORTS, SERVER LOGS, CSV & PDF EXPORT ---------------- #
 
 @app.route("/api/reports", methods=["GET"])
 @login_required
@@ -346,7 +310,13 @@ def api_reports():
         date_to=date_to,
         limit=limit,
     )
-    summaries = db.get_node_summary_reports()
+    summaries = db.get_node_summary_reports(
+        node_id=node_id,
+        condition=condition,
+        search=search,
+        date_from=date_from,
+        date_to=date_to,
+    )
     server_logs = db.read_local_server_logs(max_lines=80)
 
     return jsonify(
@@ -378,7 +348,6 @@ def api_export_csv():
     )
 
     output = io.StringIO()
-    # UTF-8 BOM so Microsoft Excel / LibreOffice opens columns & symbols cleanly
     output.write("\ufeff")
     writer = csv.writer(output)
     writer.writerow(
@@ -439,14 +408,90 @@ def api_export_csv():
     )
 
 
-# ---------------- MQTT SETTINGS & SSE STREAM ---------------- #
-
-@app.route("/api/mqtt/settings", methods=["GET", "POST"])
+@app.route("/api/reports/export.pdf", methods=["GET"])
 @login_required
-def api_mqtt_settings():
-    if request.method == "GET":
-        return jsonify({"ok": True, "settings": db.get_mqtt_settings(), "status": mqtt_manager.get_status()})
+def api_export_pdf():
+    user = get_current_user()
+    node_id = request.args.get("node_id", type=int)
+    condition = request.args.get("condition", default="all", type=str)
+    search = request.args.get("search", default="", type=str)
+    date_from = request.args.get("date_from", default="", type=str)
+    date_to = request.args.get("date_to", default="", type=str)
 
+    logs = db.query_telemetry_logs(
+        node_id=node_id,
+        condition=condition,
+        search=search,
+        date_from=date_from,
+        date_to=date_to,
+        limit=None,
+    )
+    summaries = db.get_node_summary_reports(
+        node_id=node_id,
+        condition=condition,
+        search=search,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+    node_label = "Semua End Node & Lokasi"
+    if node_id:
+        nd = db.get_end_node(node_id)
+        if nd:
+            node_label = f"{nd['name']} — {nd['location_name']}"
+
+    cond_map = {
+        "all": "Semua Kondisi (3 Kelas)",
+        "threat": "Chainsaw (Threat)",
+        "biodiversity": "Ambient Hutan (Biodiversity)",
+        "noise": "Rain/Wind (Noise)",
+    }
+    cond_label = cond_map.get((condition or "all").lower(), condition)
+
+    if date_from and date_to:
+        date_label = f"{date_from} s/d {date_to}"
+    elif date_from:
+        date_label = f"Mulai {date_from}"
+    elif date_to:
+        date_label = f"Sampai {date_to}"
+    else:
+        date_label = "Seluruh Waktu Rekaman"
+
+    filters_meta = {
+        "node_label": node_label,
+        "condition_label": cond_label,
+        "date_label": date_label,
+        "search": search.strip(),
+    }
+
+    pdf_data = generate_pdf_report_bytes(logs=logs, summaries=summaries, filters_meta=filters_meta, user=user)
+    ts_name = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"owoo_katingan_report_{ts_name}.pdf"
+    db.write_server_log("REPORT", f"PDF report exported by '{user['username']}' ({len(logs)} rows) -> {filename}")
+
+    return send_file(
+        io.BytesIO(pdf_data),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
+# ---------------- MQTT SERVER SETTINGS & SSE STREAM ---------------- #
+
+@app.route("/api/mqtt/settings", methods=["GET"])
+@login_required
+def api_get_mqtt_settings():
+    user = get_current_user()
+    settings = db.get_mqtt_settings()
+    if not user or not user.get("can_modify"):
+        settings["mqtt_password"] = ""
+    return jsonify({"ok": True, "settings": settings, "status": mqtt_manager.get_status()})
+
+
+@app.route("/api/mqtt/settings", methods=["POST"])
+@editor_required
+def api_save_mqtt_settings():
     data = request.get_json(silent=True) or {}
     host = (data.get("mqtt_host") or "127.0.0.1").strip()
     try:
@@ -466,6 +511,8 @@ def api_mqtt_settings():
 @app.route("/api/stream")
 @login_required
 def api_sse_stream():
+    user = get_current_user()
+
     def event_stream():
         client_queue = broadcaster.subscribe()
         try:
@@ -473,7 +520,13 @@ def api_sse_stream():
             while True:
                 try:
                     msg = client_queue.get(timeout=15.0)
-                    yield f"data: {json.dumps(msg)}\n\n"
+                    if msg.get("event") == "telemetry" and isinstance(msg.get("data"), dict):
+                        payload_copy = dict(msg["data"])
+                        if "node" in payload_copy:
+                            payload_copy["node"] = _sanitize_node_for_user(payload_copy["node"], user)
+                        yield f"data: {json.dumps({'event': 'telemetry', 'data': payload_copy})}\n\n"
+                    else:
+                        yield f"data: {json.dumps(msg)}\n\n"
                 except Exception:
                     yield ": keepalive\n\n"
         finally:

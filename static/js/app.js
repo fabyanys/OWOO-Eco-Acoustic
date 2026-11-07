@@ -5,7 +5,6 @@
 const KATINGAN_CENTER = [-2.625, 113.135];
 const GATEWAY_COORD = [-2.595, 113.142];
 
-// Approximate conservation corridor polygon of Katingan Mentaya Project (Central Kalimantan)
 const KATINGAN_BOUNDARY = [
   [-2.18, 113.06],
   [-2.24, 113.26],
@@ -19,6 +18,8 @@ const KATINGAN_BOUNDARY = [
 
 const appState = {
   activeTab: 'overview',
+  user: null,
+  canModify: document.body.dataset.canModify === '1',
   nodes: [],
   timeseries: [],
   summaries: [],
@@ -39,7 +40,8 @@ let tempPickMarker = null;
 let aciOverviewChart = null;
 let ndsiOverviewChart = null;
 let nodeDetailChart = null;
-let reportTrendChart = null;
+let reportAciChart = null;
+let reportNdsiChart = null;
 let reportClassChart = null;
 
 let reportSearchTimer = null;
@@ -112,6 +114,22 @@ function conditionTheme(condition) {
   };
 }
 
+function classifyAciCategory(aciVal, isRawScale = false) {
+  if (aciVal === null || aciVal === undefined || isNaN(Number(aciVal))) {
+    return { label: 'Belum Ada Data', badgeClass: 'badge-waiting', level: 'NONE' };
+  }
+  const v = Number(aciVal);
+  const lowThr = isRawScale ? 145.0 : 0.50;
+  const highThr = isRawScale ? 175.0 : 0.70;
+  if (v < lowThr) {
+    return { label: 'Rendah', badgeClass: 'badge-threat', level: 'LOW', lowThr, highThr };
+  }
+  if (v < highThr) {
+    return { label: 'Sedang', badgeClass: 'badge-amber', level: 'MEDIUM', lowThr, highThr };
+  }
+  return { label: 'Tinggi', badgeClass: 'badge-biodiversity', level: 'HIGH', lowThr, highThr };
+}
+
 function renderConditionBadge(classification, condition) {
   const th = conditionTheme(condition);
   const label = classification ? `${escapeHtml(classification)} • ${th.shortLabel}` : th.title;
@@ -135,7 +153,20 @@ function showToast(message, isThreat = false) {
   }, 4200);
 }
 
-/* ---------------- LIVE CLOCK ---------------- */
+/* ---------------- MOBILE SIDEBAR DRAWER & CLOCK ---------------- */
+
+function toggleMobileSidebar(open) {
+  const sb = document.getElementById('appSidebar');
+  const bd = document.getElementById('sidebarBackdrop');
+  if (!sb || !bd) return;
+  if (open) {
+    sb.classList.add('mobile-open');
+    bd.classList.add('open');
+  } else {
+    sb.classList.remove('mobile-open');
+    bd.classList.remove('open');
+  }
+}
 
 function startClock() {
   const el = document.getElementById('liveClock');
@@ -150,11 +181,16 @@ function startClock() {
   setInterval(tick, 1000);
 }
 
-/* ---------------- NAVIGATION TABS ---------------- */
+/* ---------------- NAVIGATION TABS (4 TABS) ---------------- */
 
 function switchMainTab(tabName) {
   appState.activeTab = tabName;
+  toggleMobileSidebar(false);
+
   document.querySelectorAll('.nav-item').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.tab === tabName);
+  });
+  document.querySelectorAll('.mobile-nav-btn').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.tab === tabName);
   });
   document.querySelectorAll('.tab-pane').forEach((pane) => {
@@ -165,6 +201,7 @@ function switchMainTab(tabName) {
     overview: 'Acoustic Overview Dashboard',
     map: 'Katingan Mentaya Project — End Node Map',
     reports: 'Acoustic Reports & Local Server Logs',
+    setting: 'Server & ChirpStack MQTT Setting',
   };
   const titleEl = document.getElementById('topbarTabTitle');
   if (titleEl) titleEl.textContent = titles[tabName] || 'OWOO Monitoring';
@@ -179,6 +216,8 @@ function switchMainTab(tabName) {
       }
     } else if (tabName === 'reports') {
       loadReportsData();
+    } else if (tabName === 'setting') {
+      loadMqttSettingsIntoTab();
     }
   }, 80);
 }
@@ -263,13 +302,14 @@ function initMaps() {
 
   katinganLayerGroup = L.layerGroup().addTo(katinganMap);
 
-  // Map click handler for coordinate picker mode
   katinganMap.on('click', (ev) => {
-    if (!appState.pickingCoordinateOnMap) return;
+    if (!appState.pickingCoordinateOnMap || !appState.canModify) return;
     const lat = ev.latlng.lat.toFixed(5);
     const lng = ev.latlng.lng.toFixed(5);
-    document.getElementById('nodeLatInput').value = lat;
-    document.getElementById('nodeLngInput').value = lng;
+    const latIn = document.getElementById('nodeLatInput');
+    const lngIn = document.getElementById('nodeLngInput');
+    if (latIn) latIn.value = lat;
+    if (lngIn) lngIn.value = lng;
 
     if (tempPickMarker) katinganMap.removeLayer(tempPickMarker);
     tempPickMarker = L.circleMarker([lat, lng], {
@@ -282,13 +322,17 @@ function initMaps() {
     cancelMapCoordinatePick(true);
     showToast(`Koordinat dipilih: (${lat}, ${lng})`);
   });
+
+  window.addEventListener('resize', () => {
+    if (appState.activeTab === 'overview' && overviewMap) overviewMap.invalidateSize();
+    if (appState.activeTab === 'map' && katinganMap) katinganMap.invalidateSize();
+  });
 }
 
 function renderOverviewMapNodes() {
   if (!overviewMap || !overviewLayerGroup) return;
   overviewLayerGroup.clearLayers();
 
-  // Conservation boundary outline
   L.polygon(KATINGAN_BOUNDARY, {
     color: 'rgba(0, 255, 136, 0.32)',
     weight: 1.5,
@@ -297,7 +341,6 @@ function renderOverviewMapNodes() {
     fillOpacity: 0.03,
   }).addTo(overviewLayerGroup);
 
-  // Central LoRaWAN WisGate + Raspberry Pi Gateway
   L.marker(GATEWAY_COORD, { icon: createGatewayIcon() })
     .bindPopup(
       `<div style="min-width:190px;">
@@ -310,7 +353,6 @@ function renderOverviewMapNodes() {
   appState.nodes.forEach((node) => {
     const th = conditionTheme(node.last_condition);
 
-    // Dashed LoRaWAN RF telemetry link line
     L.polyline([GATEWAY_COORD, [node.latitude, node.longitude]], {
       color: th.color,
       weight: 1.6,
@@ -318,7 +360,6 @@ function renderOverviewMapNodes() {
       dashArray: '5, 7',
     }).addTo(overviewLayerGroup);
 
-    // Glowing Octagonal Geofence Zone (like Reference Screenshot!)
     const octagon = L.polygon(createOctagonCoords(node.latitude, node.longitude, 0.048), {
       color: th.color,
       weight: 2.2,
@@ -342,7 +383,6 @@ function renderMapNodes() {
 
   const condFilter = document.getElementById('mapConditionFilter')?.value || 'all';
 
-  // Katingan Mentaya Project Concession Boundary
   L.polygon(KATINGAN_BOUNDARY, {
     color: 'rgba(0, 255, 136, 0.42)',
     weight: 2,
@@ -353,7 +393,6 @@ function renderMapNodes() {
     .bindTooltip('Kawasan Katingan Mentaya Project', { sticky: true })
     .addTo(katinganLayerGroup);
 
-  // Central Gateway
   L.marker(GATEWAY_COORD, { icon: createGatewayIcon() })
     .bindPopup(
       `<div style="min-width:210px;">
@@ -402,7 +441,7 @@ function renderMapNodes() {
 function buildMapPopupHtml(node, isOverview) {
   const th = conditionTheme(node.last_condition);
   return `
-    <div style="min-width: 235px; padding: 3px;">
+    <div style="min-width: 225px; padding: 3px;">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px;">
         <strong style="font-size:13.5px;color:#ECFDF5;">${escapeHtml(node.name)}</strong>
         <span style="font-size:10.5px;font-weight:800;color:${th.color};">${th.shortLabel.toUpperCase()}</span>
@@ -504,14 +543,14 @@ function renderNodeInspectorDetail(node, history) {
   if (!container || !node) return;
 
   const cond = (node.last_condition || '').toLowerCase();
-  const keyVisible = appState.revealedKeyNodeId === node.id;
-  const maskedKey = keyVisible
+  const keyVisible = appState.canModify && appState.revealedKeyNodeId === node.id;
+  const displayedKey = keyVisible
     ? node.node_key
-    : `${(node.node_key || '').slice(0, 6)}••••••••••••••••${(node.node_key || '').slice(-4)}`;
+    : `${(node.node_key || '').slice(0, 4)}••••••••••••${(node.node_key || '').slice(-4)}`;
 
   container.innerHTML = `
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
-      <div>
+    <div style="display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px;">
+      <div style="min-width:0;">
         <h3 style="font-size:16px;font-weight:800;color:var(--text-primary);">${escapeHtml(node.name)}</h3>
         <div style="font-size:12px;color:var(--text-secondary);">${escapeHtml(node.location_name)}</div>
         <div class="mono" style="font-size:11px;color:var(--text-muted);margin-top:2px;">
@@ -525,14 +564,14 @@ function renderNodeInspectorDetail(node, history) {
     <div class="metric-pair">
       <div class="metric-mini-card">
         <div style="font-size:11px;color:var(--text-secondary);font-weight:600;">Indeks ACI</div>
-        <div class="mono" style="font-size:22px;font-weight:800;color:var(--neon-green);margin-top:2px;">
+        <div class="mono" style="font-size:21px;font-weight:800;color:var(--neon-green);margin-top:2px;">
           ${formatNum(node.last_aci, 3)}
         </div>
         <div style="font-size:10.5px;color:var(--text-muted);">Acoustic Complexity</div>
       </div>
       <div class="metric-mini-card">
         <div style="font-size:11px;color:var(--text-secondary);font-weight:600;">Indeks NDSI</div>
-        <div class="mono" style="font-size:22px;font-weight:800;color:#7DD3FC;margin-top:2px;">
+        <div class="mono" style="font-size:21px;font-weight:800;color:#7DD3FC;margin-top:2px;">
           ${formatNum(node.last_ndsi, 3, true)}
         </div>
         <div style="font-size:10.5px;color:var(--text-muted);">Soundscape Ratio</div>
@@ -573,7 +612,7 @@ function renderNodeInspectorDetail(node, history) {
 
     <!-- Mini Historical Chart for This End Node -->
     <div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px;">
         <span style="font-size:11.5px;font-weight:700;color:var(--text-secondary);">Riwayat ACI &amp; NDSI Node Ini</span>
         <span class="mono" style="font-size:10.5px;color:var(--text-muted);">${escapeHtml(node.last_seen || 'Belum ada uplink')}</span>
       </div>
@@ -584,33 +623,29 @@ function renderNodeInspectorDetail(node, history) {
 
     <!-- ChirpStack Topic & Unique Key Metadata -->
     <div style="display:flex;flex-direction:column;gap:6px;">
-      <div style="display:flex;justify-content:space-between;font-size:11.5px;">
+      <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px;font-size:11.5px;">
         <span style="color:var(--text-secondary);">App ID / DevEUI:</span>
-        <span class="mono" style="color:var(--text-primary);">${escapeHtml(node.app_id)} / ${escapeHtml(node.dev_eui)}</span>
+        <span class="mono" style="color:var(--text-primary);word-break:break-all;">${escapeHtml(node.app_id)} / ${escapeHtml(node.dev_eui)}</span>
       </div>
       <div style="font-size:11px;color:var(--text-secondary);">Topic Subscribe MQTT:</div>
       <div class="topic-code-box">${escapeHtml(node.mqtt_topic)}</div>
 
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:2px;">
-        <span style="font-size:11px;color:var(--text-secondary);">Node Key Unik:</span>
-        <button type="button" style="background:none;border:none;color:var(--neon-green);font-size:11px;cursor:pointer;font-weight:700;" onclick="toggleNodeKeyVisibility(${node.id})">
-          ${keyVisible ? 'Sembunyikan' : 'Tampilkan Key'}
-        </button>
-      </div>
-      <div class="topic-code-box" style="color:#CBD5E1;">${escapeHtml(maskedKey)}</div>
-    </div>
-
-    <!-- Quick Test Uplink & Delete Node Buttons -->
-    <div style="display:flex;flex-direction:column;gap:8px;padding-top:4px;">
-      <div style="font-size:11px;font-weight:700;color:var(--text-secondary);">Uji Kirim Paket MQTT ke Node Ini:</div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;">
-        <button type="button" class="btn btn-sm btn-ghost" onclick="simulateNodePacket(${node.id}, 'biodiversity')">Ambient</button>
-        <button type="button" class="btn btn-sm btn-crimson" onclick="simulateNodePacket(${node.id}, 'threat')">Chainsaw</button>
-        <button type="button" class="btn btn-sm btn-cyan" onclick="simulateNodePacket(${node.id}, 'noise')">Rain/Wind</button>
-      </div>
-      <button type="button" class="btn btn-sm btn-crimson" style="width:100%;margin-top:4px;" onclick="confirmDeleteNode(${node.id}, '${escapeHtml(node.name)}')">
-        Hapus End Node dari Sistem
-      </button>
+      ${
+        appState.canModify
+          ? `
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-top:2px;">
+              <span style="font-size:11px;color:var(--text-secondary);">Node Key Unik:</span>
+              <button type="button" style="background:none;border:none;color:var(--neon-green);font-size:11px;cursor:pointer;font-weight:700;" onclick="toggleNodeKeyVisibility(${node.id})">
+                ${keyVisible ? 'Sembunyikan' : 'Tampilkan Key'}
+              </button>
+            </div>
+            <div class="topic-code-box" style="color:#CBD5E1;">${escapeHtml(displayedKey)}</div>
+            <button type="button" class="btn btn-sm btn-crimson" style="width:100%;margin-top:6px;" onclick="confirmDeleteNode(${node.id}, '${escapeHtml(node.name)}')">
+              Hapus End Node dari Sistem
+            </button>
+          `
+          : ''
+      }
     </div>
   `;
 
@@ -618,6 +653,7 @@ function renderNodeInspectorDetail(node, history) {
 }
 
 function toggleNodeKeyVisibility(nodeId) {
+  if (!appState.canModify) return;
   appState.revealedKeyNodeId = appState.revealedKeyNodeId === nodeId ? null : nodeId;
   selectNodeOnMap(nodeId, false);
 }
@@ -727,7 +763,7 @@ function initOverviewCharts() {
       },
       scales: {
         x: {
-          ticks: { color: '#6E9988', font: { size: 10.5 }, maxTicksLimit: 8 },
+          ticks: { color: '#6E9988', font: { size: 10 }, maxTicksLimit: 7 },
           grid: { color: 'rgba(0, 255, 136, 0.06)' },
         },
         y: {
@@ -789,7 +825,7 @@ function initOverviewCharts() {
       },
       scales: {
         x: {
-          ticks: { color: '#6E9988', font: { size: 10.5 }, maxTicksLimit: 8 },
+          ticks: { color: '#6E9988', font: { size: 10 }, maxTicksLimit: 7 },
           grid: { color: 'rgba(0, 255, 136, 0.06)' },
         },
         y: {
@@ -809,7 +845,6 @@ function updateOverviewCharts(series) {
   const labels = series.map((item) => `${formatShortTime(item.recorded_at)} (${item.node_name.replace('SylvaSense ', '')})`);
   const aciVals = series.map((item) => item.aci);
   const ndsiVals = series.map((item) => item.ndsi);
-  // Complementary anthrophonic disturbance wave (derived from NDSI = (B-A)/(B+A))
   const disturbanceVals = series.map((item) => Number(((1 - item.ndsi) / 2 - 0.5).toFixed(3)));
 
   aciOverviewChart.data.labels = labels;
@@ -900,14 +935,11 @@ function refreshKpisAndSelectors() {
     banner.classList.remove('visible');
   }
 
-  // Populate Node Dropdowns across Overview, Reports, and Simulator
   const overviewSel = document.getElementById('overviewNodeFilter');
   const repSel = document.getElementById('repNodeFilter');
-  const simSel = document.getElementById('simTargetNodeSelect');
 
   const prevOverview = overviewSel ? overviewSel.value : '';
   const prevRep = repSel ? repSel.value : '';
-  const prevSim = simSel ? simSel.value : '';
 
   const nodeOptions = nodes
     .map((n) => `<option value="${n.id}">${escapeHtml(n.name)} — ${escapeHtml(n.location_name)}</option>`)
@@ -921,32 +953,34 @@ function refreshKpisAndSelectors() {
     repSel.innerHTML = `<option value="">Semua End Node &amp; Lokasi</option>` + nodeOptions;
     repSel.value = prevRep;
   }
-  if (simSel) {
-    simSel.innerHTML = nodeOptions;
-    if (prevSim) simSel.value = prevSim;
-  }
 }
 
 function updateMqttStatusUi(mqtt) {
   if (!mqtt) return;
   appState.mqtt = mqtt;
-  const dot = document.getElementById('sidebarMqttDot');
-  const stateEl = document.getElementById('sidebarMqttState');
-  const brokerEl = document.getElementById('sidebarMqttBroker');
-  const topicsEl = document.getElementById('sidebarMqttTopics');
 
-  if (mqtt.connected) {
-    dot.className = 'status-dot online';
-    stateEl.textContent = 'Connected';
-    stateEl.style.color = '#00FF88';
-  } else {
-    dot.className = 'status-dot standby';
-    stateEl.textContent = 'Local Ready';
-    stateEl.style.color = '#7DD3FC';
+  const navDot = document.getElementById('navMqttDot');
+  if (navDot) {
+    navDot.className = mqtt.connected ? 'nav-status-dot online' : 'nav-status-dot';
   }
 
-  brokerEl.textContent = `${mqtt.host || '127.0.0.1'}:${mqtt.port || 1883}`;
-  topicsEl.textContent = `${mqtt.registered_nodes || 0} End Node Topics`;
+  const badge = document.getElementById('settingMqttBadge');
+  const stateText = document.getElementById('settingMqttStateText');
+  const brokerAddr = document.getElementById('settingBrokerAddr');
+  const topicsCount = document.getElementById('settingTopicsCount');
+
+  if (badge && stateText) {
+    if (mqtt.connected) {
+      badge.className = 'badge badge-biodiversity';
+      stateText.textContent = 'Terhubung ke Broker MQTT';
+    } else {
+      badge.className = 'badge badge-noise';
+      stateText.textContent = 'Menunggu Koneksi Broker';
+    }
+  }
+
+  if (brokerAddr) brokerAddr.textContent = `${mqtt.host || '127.0.0.1'}:${mqtt.port || 1883}`;
+  if (topicsCount) topicsCount.textContent = `${mqtt.registered_nodes || 0} Topic`;
 
   const activeList = document.getElementById('mqttActiveTopicsList');
   if (activeList) {
@@ -957,7 +991,7 @@ function updateMqttStatusUi(mqtt) {
   }
 }
 
-/* ---------------- REPORTS TAB & CSV EXPORT ---------------- */
+/* ---------------- REPORTS TAB, CONCLUSION & CSV / PDF EXPORT ---------------- */
 
 function buildReportQueryString() {
   const params = new URLSearchParams();
@@ -1009,30 +1043,43 @@ function exportReportsCsv() {
   window.location.href = `/api/reports/export.csv?${qs}`;
 }
 
+function exportReportsPdf() {
+  const qs = buildReportQueryString();
+  window.location.href = `/api/reports/export.pdf?${qs}`;
+}
+
 function renderReportsTab() {
   document.getElementById('repTotalRecordsBadge').textContent = `${appState.logs.length} Log`;
+
+  const isRawScale = appState.logs.some((r) => Number(r.aci) > 1.5);
 
   // 1. Node Summary Table
   const sumBody = document.getElementById('nodeSummaryTableBody');
   if (sumBody) {
-    sumBody.innerHTML = appState.summaries
-      .map(
-        (s) => `
-        <tr>
-          <td><strong>${escapeHtml(s.node_name)}</strong></td>
-          <td>${escapeHtml(s.location_name)}</td>
-          <td class="mono" style="font-size:11px;color:var(--neon-green);">${escapeHtml(s.mqtt_topic)}</td>
-          <td class="mono">${s.total_uplinks || 0}</td>
-          <td class="mono" style="color:var(--neon-green);font-weight:700;">${formatNum(s.avg_aci, 3)}</td>
-          <td class="mono" style="color:#7DD3FC;font-weight:700;">${formatNum(s.avg_ndsi, 3, true)}</td>
-          <td class="mono" style="color:#FF5C77;font-weight:700;">${s.threat_count || 0}</td>
-          <td class="mono" style="color:#00FF88;">${s.biodiversity_count || 0}</td>
-          <td class="mono" style="color:#38BDF8;">${s.noise_count || 0}</td>
-          <td>${renderConditionBadge(s.last_classification, s.last_condition)}</td>
-        </tr>
-      `
-      )
-      .join('');
+    if (appState.summaries.length === 0) {
+      sumBody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:20px;color:var(--text-secondary);">Tidak ada ringkasan End Node pada filter ini.</td></tr>`;
+    } else {
+      sumBody.innerHTML = appState.summaries
+        .map((s) => {
+          const cat = classifyAciCategory(s.avg_aci, isRawScale);
+          return `
+            <tr>
+              <td><strong>${escapeHtml(s.node_name)}</strong></td>
+              <td>${escapeHtml(s.location_name)}</td>
+              <td class="mono" style="font-size:11px;color:var(--neon-green);">${escapeHtml(s.mqtt_topic)}</td>
+              <td class="mono">${s.total_uplinks || 0}</td>
+              <td class="mono" style="color:var(--neon-green);font-weight:700;">${formatNum(s.avg_aci, 3)}</td>
+              <td><span class="badge ${cat.badgeClass}"><span class="badge-dot"></span>${cat.label}</span></td>
+              <td class="mono" style="color:#7DD3FC;font-weight:700;">${formatNum(s.avg_ndsi, 3, true)}</td>
+              <td class="mono" style="color:#FF5C77;font-weight:700;">${s.threat_count || 0}</td>
+              <td class="mono" style="color:#00FF88;">${s.biodiversity_count || 0}</td>
+              <td class="mono" style="color:#38BDF8;">${s.noise_count || 0}</td>
+              <td>${renderConditionBadge(s.last_classification, s.last_condition)}</td>
+            </tr>
+          `;
+        })
+        .join('');
+    }
   }
 
   // 2. Detailed Logs Table
@@ -1053,7 +1100,7 @@ function renderReportsTab() {
             <td class="mono" style="color:${row.ndsi < 0 ? '#FF6B81' : '#7DD3FC'};font-weight:700;">${formatNum(row.ndsi, 3, true)}</td>
             <td>${renderConditionBadge(row.classification, row.condition)}</td>
             <td class="mono">${Math.round((row.confidence || 0.94) * 100)}%</td>
-            <td class="mono" style="font-size:11px;color:var(--text-secondary);">${row.rssi} dBm / ${row.snr} dB</td>
+            <td class="mono" style="font-size:11px;color:var(--text-secondary);white-space:nowrap;">${row.rssi} dBm / ${row.snr} dB</td>
           </tr>
         `
         )
@@ -1076,43 +1123,89 @@ function renderReportsTab() {
       : `<div style="color:var(--text-muted);">Log server lokal kosong.</div>`;
   }
 
-  // 4. Report Charts
+  // 4. Render ACI Category Conclusion Box
+  renderReportConclusion(isRawScale);
+
+  // 5. Render Separate ACI, NDSI, & Distribution Charts
   renderReportCharts();
 }
 
-function renderReportCharts() {
-  const trendCanvas = document.getElementById('reportTrendChart');
-  const classCanvas = document.getElementById('reportClassChart');
-  if (!trendCanvas || !classCanvas) return;
+function renderReportConclusion(isRawScale) {
+  const badgeWrap = document.getElementById('reportConclusionBadge');
+  const bodyWrap = document.getElementById('reportConclusionBody');
+  const cardWrap = document.getElementById('reportConclusionCard');
+  if (!badgeWrap || !bodyWrap || !cardWrap) return;
 
-  if (reportTrendChart) reportTrendChart.destroy();
+  if (appState.logs.length === 0) {
+    cardWrap.classList.remove('alert-border');
+    badgeWrap.innerHTML = `<span class="badge badge-waiting"><span class="badge-dot"></span>Belum Ada Sampel</span>`;
+    bodyWrap.innerHTML = `<span style="color:var(--text-secondary);">Tidak ada sampel transmisi data pada konfigurasi filter yang dipilih untuk menyimpulkan kategori ACI.</span>`;
+    return;
+  }
+
+  const aciList = appState.logs.map((r) => Number(r.aci));
+  const ndsiList = appState.logs.map((r) => Number(r.ndsi));
+  const avgAci = aciList.reduce((a, b) => a + b, 0) / aciList.length;
+  const minAci = Math.min(...aciList);
+  const maxAci = Math.max(...aciList);
+  const avgNdsi = ndsiList.reduce((a, b) => a + b, 0) / ndsiList.length;
+
+  const bioCnt = appState.logs.filter((r) => (r.condition || '').toLowerCase() === 'biodiversity').length;
+  const thrCnt = appState.logs.filter((r) => (r.condition || '').toLowerCase() === 'threat').length;
+  const noiCnt = appState.logs.filter((r) => (r.condition || '').toLowerCase() === 'noise').length;
+
+  const cat = classifyAciCategory(avgAci, isRawScale);
+  cardWrap.classList.toggle('alert-border', cat.level === 'LOW');
+
+  badgeWrap.innerHTML = `
+    <span class="badge ${cat.badgeClass}" style="font-size:12.5px;padding:6px 14px;">
+      <span class="badge-dot"></span>
+      ACI Kategori ${cat.label.toUpperCase()} (${formatNum(avgAci, 3)})
+    </span>
+  `;
+
+  let desc = '';
+  if (cat.level === 'HIGH') {
+    desc = `Berdasarkan <strong>${appState.logs.length} rekaman data</strong> pada konfigurasi filter ini (rentang ACI <span class="mono">${formatNum(minAci, 3)}</span> &ndash; <span class="mono">${formatNum(maxAci, 3)}</span>, rata-rata <strong style="color:var(--neon-green);" class="mono">${formatNum(avgAci, 3)}</strong>), data dikategorikan ke dalam <strong style="color:var(--neon-green);">ACI Kategori TINGGI (&ge; ${cat.highThr.toFixed(2)})</strong>. Hal ini menandakan aktivitas vokalisasi keanekaragaman hayati hutan (<em>Ambient Hutan / Biodiversity</em>) yang aktif dan sehat.`;
+  } else if (cat.level === 'MEDIUM') {
+    desc = `Berdasarkan <strong>${appState.logs.length} rekaman data</strong> pada konfigurasi filter ini (rentang ACI <span class="mono">${formatNum(minAci, 3)}</span> &ndash; <span class="mono">${formatNum(maxAci, 3)}</span>, rata-rata <strong style="color:#FBBF24;" class="mono">${formatNum(avgAci, 3)}</strong>), data dikategorikan ke dalam <strong style="color:#FBBF24;">ACI Kategori SEDANG (${cat.lowThr.toFixed(2)} &ndash; ${(cat.highThr - 0.01).toFixed(2)})</strong>. Kompleksitas bio-akustik berada pada tingkat moderat atau dipengaruhi suara alam seperti hujan/angin (<em>Rain/Wind</em>).`;
+  } else {
+    desc = `Berdasarkan <strong>${appState.logs.length} rekaman data</strong> pada konfigurasi filter ini (rentang ACI <span class="mono">${formatNum(minAci, 3)}</span> &ndash; <span class="mono">${formatNum(maxAci, 3)}</span>, rata-rata <strong style="color:#FF5C77;" class="mono">${formatNum(avgAci, 3)}</strong>), data dikategorikan ke dalam <strong style="color:#FF5C77;">ACI Kategori RENDAH (&lt; ${cat.lowThr.toFixed(2)})</strong>. Rendahnya kompleksitas spektral mengindikasikan minimnya aktivitas satwa atau adanya dominasi gangguan mesin (<em>Chainsaw / Threat</em>).`;
+  }
+
+  const extra = ` Rata-rata NDSI tercatat <span class="mono" style="color:#7DD3FC;font-weight:700;">${formatNum(avgNdsi, 3, true)}</span> dengan rincian <strong>${bioCnt} Biodiversity</strong>, <strong>${noiCnt} Noise</strong>, dan <strong style="color:${thrCnt > 0 ? '#FF5C77' : 'inherit'};">${thrCnt} Threat (Chainsaw)</strong>. Kesimpulan ini juga disertakan secara otomatis pada bagian akhir dokumen saat Anda menekan tombol <strong>Ekspor PDF</strong>.`;
+
+  bodyWrap.innerHTML = desc + extra;
+}
+
+function renderReportCharts() {
+  const aciCanvas = document.getElementById('reportAciChart');
+  const ndsiCanvas = document.getElementById('reportNdsiChart');
+  const classCanvas = document.getElementById('reportClassChart');
+  if (!aciCanvas || !ndsiCanvas || !classCanvas) return;
+
+  if (reportAciChart) reportAciChart.destroy();
+  if (reportNdsiChart) reportNdsiChart.destroy();
   if (reportClassChart) reportClassChart.destroy();
 
-  const chronological = appState.logs.slice(0, 45).reverse();
-  reportTrendChart = new Chart(trendCanvas, {
+  const chronological = appState.logs.slice(0, 50).reverse();
+  const labels = chronological.map((r) => `${formatShortTime(r.recorded_at)} (${r.node_name.replace('SylvaSense ', '')})`);
+
+  // 1. Separate ACI Chart
+  reportAciChart = new Chart(aciCanvas, {
     type: 'line',
     data: {
-      labels: chronological.map((r) => `${formatShortTime(r.recorded_at)} ${r.node_name.replace('SylvaSense ', '')}`),
+      labels,
       datasets: [
         {
-          label: 'ACI',
+          label: 'ACI (Acoustic Complexity Index)',
           data: chronological.map((r) => r.aci),
           borderColor: '#00FF88',
-          backgroundColor: 'rgba(0, 255, 136, 0.14)',
-          borderWidth: 2.2,
-          pointRadius: 2.5,
+          backgroundColor: 'rgba(0, 255, 136, 0.16)',
+          borderWidth: 2.3,
+          pointRadius: 2.6,
           tension: 0.35,
           fill: true,
-        },
-        {
-          label: 'NDSI',
-          data: chronological.map((r) => r.ndsi),
-          borderColor: '#38BDF8',
-          backgroundColor: 'rgba(56, 189, 248, 0.08)',
-          borderWidth: 2,
-          pointRadius: 2.5,
-          tension: 0.35,
-          fill: false,
         },
       ],
     },
@@ -1124,7 +1217,7 @@ function renderReportCharts() {
       },
       scales: {
         x: {
-          ticks: { color: '#6E9988', font: { size: 10 }, maxTicksLimit: 8 },
+          ticks: { color: '#6E9988', font: { size: 10 }, maxTicksLimit: 7 },
           grid: { color: 'rgba(0,255,136,0.05)' },
         },
         y: {
@@ -1135,27 +1228,67 @@ function renderReportCharts() {
     },
   });
 
+  // 2. Separate NDSI Chart
+  reportNdsiChart = new Chart(ndsiCanvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'NDSI (Normalized Difference Soundscape Index)',
+          data: chronological.map((r) => r.ndsi),
+          borderColor: '#38BDF8',
+          backgroundColor: 'rgba(56, 189, 248, 0.16)',
+          borderWidth: 2.3,
+          pointRadius: 2.6,
+          tension: 0.35,
+          fill: true,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#9BBDB0', boxWidth: 12 } },
+      },
+      scales: {
+        x: {
+          ticks: { color: '#6E9988', font: { size: 10 }, maxTicksLimit: 7 },
+          grid: { color: 'rgba(0,255,136,0.05)' },
+        },
+        y: {
+          min: -1.0,
+          max: 1.0,
+          ticks: { color: '#6E9988', font: { size: 10.5 } },
+          grid: { color: 'rgba(0,255,136,0.07)' },
+        },
+      },
+    },
+  });
+
+  // 3. Classification Distribution Bar Chart per End Node
   reportClassChart = new Chart(classCanvas, {
     type: 'bar',
     data: {
-      labels: appState.summaries.map((s) => s.node_name.replace('SylvaSense ', '')),
+      labels: appState.summaries.map((s) => `${s.node_name.replace('SylvaSense ', '')} (${s.location_name.split('—')[0].trim()})`),
       datasets: [
         {
           label: 'Ambient Hutan (Biodiversity)',
           data: appState.summaries.map((s) => s.biodiversity_count || 0),
-          backgroundColor: 'rgba(0, 255, 136, 0.78)',
+          backgroundColor: 'rgba(0, 255, 136, 0.80)',
           borderRadius: 5,
         },
         {
           label: 'Chainsaw (Threat)',
           data: appState.summaries.map((s) => s.threat_count || 0),
-          backgroundColor: 'rgba(255, 42, 75, 0.85)',
+          backgroundColor: 'rgba(255, 42, 75, 0.86)',
           borderRadius: 5,
         },
         {
           label: 'Rain/Wind (Noise)',
           data: appState.summaries.map((s) => s.noise_count || 0),
-          backgroundColor: 'rgba(56, 189, 248, 0.78)',
+          backgroundColor: 'rgba(56, 189, 248, 0.80)',
           borderRadius: 5,
         },
       ],
@@ -1164,16 +1297,15 @@ function renderReportCharts() {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { labels: { color: '#9BBDB0', boxWidth: 11, font: { size: 10.5 } } },
+        legend: { labels: { color: '#9BBDB0', boxWidth: 11, font: { size: 11 } } },
       },
       scales: {
         x: {
-          stacked: true,
           ticks: { color: '#9BBDB0', font: { size: 10.5 } },
           grid: { display: false },
         },
         y: {
-          stacked: true,
+          beginAtZero: true,
           ticks: { color: '#6E9988', precision: 0 },
           grid: { color: 'rgba(0,255,136,0.07)' },
         },
@@ -1182,27 +1314,38 @@ function renderReportCharts() {
   });
 }
 
-/* ---------------- ADD END NODE MODAL & MAP PICKER ---------------- */
+/* ---------------- ADD & DELETE END NODE (EDITOR ROLES ONLY) ---------------- */
 
 function generateRandomNodeKey() {
+  const keyIn = document.getElementById('nodeKeyInput');
+  if (!keyIn) return;
   const bytes = new Uint8Array(16);
   window.crypto.getRandomValues(bytes);
-  const hex = Array.from(bytes)
+  keyIn.value = Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
-  document.getElementById('nodeKeyInput').value = hex;
 }
 
 function updateTopicPreview() {
-  const appId = (document.getElementById('nodeAppIdInput').value || '<appid>').trim();
-  const devEui = (document.getElementById('nodeDevEuiInput').value || '<devui>').trim().toLowerCase();
-  document.getElementById('mqttTopicPreview').textContent = `application/${appId}/device/${devEui}/event/up`;
+  const appId = (document.getElementById('nodeAppIdInput')?.value || '<appid>').trim();
+  const devEui = (document.getElementById('nodeDevEuiInput')?.value || '<devui>').trim().toLowerCase();
+  const prev = document.getElementById('mqttTopicPreview');
+  if (prev) prev.textContent = `application/${appId}/device/${devEui}/event/up`;
 }
 
 function openAddNodeModal() {
+  if (!appState.canModify) {
+    showToast('Peran akun Anda hanya memiliki akses lihat (View-Only).', true);
+    return;
+  }
+  const modal = document.getElementById('addNodeModal');
+  if (!modal) return;
+
   const errEl = document.getElementById('addNodeError');
-  errEl.className = 'auth-alert';
-  errEl.textContent = '';
+  if (errEl) {
+    errEl.className = 'auth-alert';
+    errEl.textContent = '';
+  }
 
   if (!document.getElementById('nodeKeyInput').value) {
     generateRandomNodeKey();
@@ -1212,105 +1355,112 @@ function openAddNodeModal() {
     document.getElementById('nodeDevEuiInput').value = `70b3d57ed006${nextNum}`;
   }
   updateTopicPreview();
-  document.getElementById('addNodeModal').classList.add('open');
+  modal.classList.add('open');
 }
 
 function closeAddNodeModal() {
-  document.getElementById('addNodeModal').classList.remove('open');
+  const modal = document.getElementById('addNodeModal');
+  if (modal) modal.classList.remove('open');
 }
 
 function startMapCoordinatePick() {
+  if (!appState.canModify) return;
   closeAddNodeModal();
   switchMainTab('map');
   appState.pickingCoordinateOnMap = true;
-  document.getElementById('pickCoordBanner').classList.add('active');
+  document.getElementById('pickCoordBanner')?.classList.add('active');
   document.getElementById('katinganMap').style.cursor = 'crosshair';
 }
 
 function cancelMapCoordinatePick(reopenModal = false) {
   appState.pickingCoordinateOnMap = false;
-  document.getElementById('pickCoordBanner').classList.remove('active');
+  document.getElementById('pickCoordBanner')?.classList.remove('active');
   document.getElementById('katinganMap').style.cursor = '';
-  if (reopenModal) {
+  if (reopenModal && appState.canModify) {
     openAddNodeModal();
   }
 }
 
-document.getElementById('addNodeForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const errEl = document.getElementById('addNodeError');
-  errEl.className = 'auth-alert';
+const addNodeFormEl = document.getElementById('addNodeForm');
+if (addNodeFormEl) {
+  addNodeFormEl.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById('addNodeError');
+    errEl.className = 'auth-alert';
 
-  const payload = {
-    name: document.getElementById('nodeNameInput').value,
-    location_name: document.getElementById('nodeLocationInput').value,
-    latitude: parseFloat(document.getElementById('nodeLatInput').value),
-    longitude: parseFloat(document.getElementById('nodeLngInput').value),
-    app_id: document.getElementById('nodeAppIdInput').value,
-    dev_eui: document.getElementById('nodeDevEuiInput').value,
-    node_key: document.getElementById('nodeKeyInput').value,
-  };
+    const payload = {
+      name: document.getElementById('nodeNameInput').value,
+      location_name: document.getElementById('nodeLocationInput').value,
+      latitude: parseFloat(document.getElementById('nodeLatInput').value),
+      longitude: parseFloat(document.getElementById('nodeLngInput').value),
+      app_id: document.getElementById('nodeAppIdInput').value,
+      dev_eui: document.getElementById('nodeDevEuiInput').value,
+      node_key: document.getElementById('nodeKeyInput').value,
+    };
 
-  try {
-    const res = await fetch('/api/nodes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    if (!res.ok || !data.ok) {
-      errEl.textContent = data.error || 'Gagal menambahkan End Node.';
+    try {
+      const res = await fetch('/api/nodes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        errEl.textContent = data.error || 'Gagal menambahkan End Node.';
+        errEl.className = 'auth-alert error';
+        return;
+      }
+
+      closeAddNodeModal();
+      document.getElementById('nodeNameInput').value = '';
+      document.getElementById('nodeLocationInput').value = '';
+      document.getElementById('nodeDevEuiInput').value = '';
+      generateRandomNodeKey();
+
+      await reloadBootstrapData();
+      switchMainTab('map');
+      setTimeout(() => selectNodeOnMap(data.node.id, true), 120);
+      showToast(`End Node "${data.node.name}" ditambahkan & di-subscribe ke MQTT!`);
+    } catch (err) {
+      errEl.textContent = 'Gagal menghubungi server lokal.';
       errEl.className = 'auth-alert error';
-      return;
     }
-
-    closeAddNodeModal();
-    document.getElementById('nodeNameInput').value = '';
-    document.getElementById('nodeLocationInput').value = '';
-    document.getElementById('nodeDevEuiInput').value = '';
-    generateRandomNodeKey();
-
-    await reloadBootstrapData();
-    switchMainTab('map');
-    setTimeout(() => selectNodeOnMap(data.node.id, true), 120);
-    showToast(`End Node "${data.node.name}" ditambahkan & di-subscribe ke MQTT!`);
-  } catch (err) {
-    errEl.textContent = 'Gagal menghubungi server lokal.';
-    errEl.className = 'auth-alert error';
-  }
-});
+  });
+}
 
 async function confirmDeleteNode(nodeId, nodeName) {
+  if (!appState.canModify) return;
   if (!confirm(`Hapus End Node "${nodeName}" beserta topic MQTT-nya dari database?`)) return;
   try {
     const res = await fetch(`/api/nodes/${nodeId}`, { method: 'DELETE' });
     const data = await res.json();
-    if (data.ok) {
-      appState.selectedNodeId = null;
-      await reloadBootstrapData();
-      if (appState.nodes.length > 0) {
-        selectNodeOnMap(appState.nodes[0].id, false);
-      } else {
-        document.getElementById('nodeDetailContainer').innerHTML =
-          `<div style="padding:24px;text-align:center;color:var(--text-secondary);">Belum ada End Node terdaftar.</div>`;
-      }
-      showToast(`End Node "${nodeName}" dihapus.`);
+    if (!res.ok || !data.ok) {
+      showToast(data.error || 'Gagal menghapus End Node.', true);
+      return;
     }
+    appState.selectedNodeId = null;
+    await reloadBootstrapData();
+    if (appState.nodes.length > 0) {
+      selectNodeOnMap(appState.nodes[0].id, false);
+    } else {
+      document.getElementById('nodeDetailContainer').innerHTML =
+        `<div style="padding:24px;text-align:center;color:var(--text-secondary);">Belum ada End Node terdaftar.</div>`;
+    }
+    showToast(`End Node "${nodeName}" dihapus.`);
   } catch (err) {
     console.error(err);
   }
 }
 
-/* ---------------- MQTT SETTINGS & PACKET SIMULATION ---------------- */
+/* ---------------- TAB 4: SETTING (SERVER MQTT CONFIGURATION) ---------------- */
 
-async function openMqttModal() {
-  document.getElementById('mqttModal').classList.add('open');
+async function loadMqttSettingsIntoTab() {
   try {
     const res = await fetch('/api/mqtt/settings');
     const data = await res.json();
     if (data.ok) {
-      document.getElementById('mqttHostInput').value = data.settings.mqtt_host;
-      document.getElementById('mqttPortInput').value = data.settings.mqtt_port;
+      document.getElementById('mqttHostInput').value = data.settings.mqtt_host || '127.0.0.1';
+      document.getElementById('mqttPortInput').value = data.settings.mqtt_port || 1883;
       document.getElementById('mqttUserInput').value = data.settings.mqtt_username || '';
       document.getElementById('mqttPassInput').value = data.settings.mqtt_password || '';
       document.getElementById('mqttStrictKeyCheck').checked = Boolean(data.settings.enforce_node_key);
@@ -1321,56 +1471,37 @@ async function openMqttModal() {
   }
 }
 
-function closeMqttModal() {
-  document.getElementById('mqttModal').classList.remove('open');
-}
+const mqttSettingsFormEl = document.getElementById('mqttSettingsForm');
+if (mqttSettingsFormEl) {
+  mqttSettingsFormEl.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!appState.canModify) return;
 
-document.getElementById('mqttSettingsForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const payload = {
-    mqtt_host: document.getElementById('mqttHostInput').value,
-    mqtt_port: parseInt(document.getElementById('mqttPortInput').value, 10),
-    mqtt_username: document.getElementById('mqttUserInput').value,
-    mqtt_password: document.getElementById('mqttPassInput').value,
-    enforce_node_key: document.getElementById('mqttStrictKeyCheck').checked,
-  };
+    const payload = {
+      mqtt_host: document.getElementById('mqttHostInput').value,
+      mqtt_port: parseInt(document.getElementById('mqttPortInput').value, 10),
+      mqtt_username: document.getElementById('mqttUserInput').value,
+      mqtt_password: document.getElementById('mqttPassInput').value,
+      enforce_node_key: document.getElementById('mqttStrictKeyCheck').checked,
+    };
 
-  try {
-    const res = await fetch('/api/mqtt/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    if (data.ok) {
+    try {
+      const res = await fetch('/api/mqtt/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        showToast(data.error || 'Gagal menyimpan pengaturan server.', true);
+        return;
+      }
       updateMqttStatusUi(data.status);
-      showToast(`Konfigurasi MQTT diperbarui ke ${payload.mqtt_host}:${payload.mqtt_port}`);
+      showToast(`Konfigurasi server MQTT diperbarui ke ${payload.mqtt_host}:${payload.mqtt_port}`);
+    } catch (err) {
+      showToast('Gagal menghubungi server lokal.', true);
     }
-  } catch (err) {
-    showToast('Gagal menyimpan pengaturan MQTT.', true);
-  }
-});
-
-async function simulateNodePacket(nodeId, preset) {
-  try {
-    const res = await fetch(`/api/nodes/${nodeId}/simulate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ preset }),
-    });
-    const data = await res.json();
-    if (!data.ok) {
-      showToast(data.error || 'Gagal mengirim paket uji.', true);
-    }
-  } catch (err) {
-    showToast('Gagal menghubungi server lokal.', true);
-  }
-}
-
-function triggerQuickSimulation(preset) {
-  const nodeId = document.getElementById('simTargetNodeSelect').value;
-  if (!nodeId) return;
-  simulateNodePacket(Number(nodeId), preset);
+  });
 }
 
 /* ---------------- REAL-TIME SERVER-SENT EVENTS (SSE) ---------------- */
@@ -1386,7 +1517,6 @@ function connectRealtimeStream() {
         const { log, node, mqtt } = msg.data;
         if (mqtt) updateMqttStatusUi(mqtt);
 
-        // Update node in local state
         const idx = appState.nodes.findIndex((n) => n.id === node.id);
         if (idx >= 0) appState.nodes[idx] = node;
         else appState.nodes.push(node);
@@ -1434,6 +1564,11 @@ async function reloadBootstrapData() {
   const data = await res.json();
   if (!data.ok) return;
 
+  appState.user = data.user || null;
+  if (data.user && typeof data.user.can_modify === 'boolean') {
+    appState.canModify = data.user.can_modify;
+  }
+
   appState.nodes = data.nodes || [];
   appState.timeseries = data.timeseries || [];
   appState.summaries = data.summaries || [];
@@ -1456,5 +1591,6 @@ window.addEventListener('DOMContentLoaded', async () => {
   initMaps();
   initOverviewCharts();
   await reloadBootstrapData();
+  loadMqttSettingsIntoTab();
   connectRealtimeStream();
 });

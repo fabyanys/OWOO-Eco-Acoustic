@@ -349,22 +349,6 @@ class ChirpStackMQTTManager:
             )
         return entry
 
-    def publish_or_simulate_uplink(self, node: dict, payload_dict: dict) -> dict | None:
-        """
-        If connected to real MQTT broker, publishes straight to `application/<appid>/device/<devui>/event/up`
-        so the full ChirpStack MQTT subscriber loop receives it; otherwise processes directly via local pipeline.
-        """
-        topic = f"application/{node['app_id']}/device/{node['dev_eui']}/event/up"
-        raw_bytes = json.dumps(payload_dict).encode("utf-8")
-
-        if self.connected and self.client is not None:
-            info = self.client.publish(topic, raw_bytes, qos=1)
-            if info.rc == mqtt.MQTT_ERR_SUCCESS:
-                return {"published_via_mqtt": True, "topic": topic}
-
-        entry = self.process_incoming_topic_message(topic, raw_bytes)
-        return {"published_via_mqtt": False, "topic": topic, "entry": entry}
-
     def get_status(self) -> dict:
         cfg = db.get_mqtt_settings()
         nodes = db.list_end_nodes()

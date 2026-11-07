@@ -6,22 +6,24 @@ Sistem web monitoring lokal berbasis **Raspberry Pi** & **ChirpStack LoRaWAN** u
 
 ## Fitur Utama
 
-1. **Autentikasi User & Database Lokal (`SQLite`)**
-   - Halaman **Login** & **Registrasi Akun Baru** (`/login`) sebelum mengakses dashboard monitoring.
-   - Seluruh akun operator tersimpan aman dengan password ter-hash (`Werkzeug Scrypt / PBKDF2`) di `data/owoo.db`.
+1. **Autentikasi User & Role-Based Access Control (SQLite)**
+   - Halaman **Login** & **Registrasi Akun Baru** (/login) dengan password terenkripsi (Werkzeug Scrypt / PBKDF2) di data/owoo.db.
+   - **Pembagian Hak Akses Tiap Peran Akun**:
+     - **Conservation Operator** & **IoT Network Engineer** (*Read & Write*): Dapat melihat seluruh data monitoring, mengunduh laporan CSV & PDF, menambah/menghapus End Node, serta mengubah konfigurasi server MQTT pada tab **Setting**.
+     - **Forest Ranger** & **MRV Auditor** (*View & Download Report Only*): Hanya dapat melihat seluruh data monitoring dan mengunduh laporan CSV & PDF tanpa dapat menambah/menghapus End Node maupun mengubah konfigurasi server.
 
-2. **3 Tab Navigasi Utama (Tema Dark Emerald `#061712` + Neon Green `#00FF88` + Crimson `#FF2A4B`)**
-   - **Dashboard (Overview)**: Peta taktis real-time kawasan Katingan Mentaya dengan geofence poligonal bercahaya, grafik **Acoustic Complexity Index (ACI)**, dan grafik **Normalized Difference Soundscape Index (NDSI)**.
-   - **Map (Katingan Mentaya Project)**: Peta lengkap seluruh lokasi End Node, tombol **+ Tambah End Node** (input Nama, Lokasi Penempatan + pilih koordinat langsung di peta, `App ID`, `DevEUI`, serta `Node Key` unik per node), serta panel inspeksi detail saat End Node diklik (menampilkan **ACI**, **NDSI**, dan **3 Kondisi Klasifikasi Audio**: `Chainsaw` [Threat], `Ambient Hutan` [Biodiversity], dan `Rain/Wind` [Noise]).
-   - **Reports & Local Server Logs**: Rekapitulasi seluruh End Node dan lokasinya, grafik tren log historis & distribusi klasifikasi, tampilan live log file server lokal (`logs/telemetry_uplinks.log`), serta fitur **Ekspor CSV**.
+2. **4 Tab Navigasi Utama & Desain Responsif (Desktop, Tablet, & Smartphone)**
+   - **Dashboard (Overview)**: Peta taktis real-time kawasan Katingan Mentaya dengan geofence oktagonal bercahaya, grafik **Acoustic Complexity Index (ACI)**, dan grafik **Normalized Difference Soundscape Index (NDSI)**.
+   - **Map (Katingan Mentaya Project)**: Peta sebaran seluruh End Node, tombol **+ Tambah End Node** khusus di tab Map (untuk peran *Conservation Operator* & *IoT Network Engineer*), serta panel inspeksi detail saat End Node diklik (**ACI**, **NDSI**, dan **3 Kondisi Klasifikasi Audio**: `Chainsaw` [Threat], `Ambient Hutan` [Biodiversity], `Rain/Wind` [Noise]).
+   - **Reports**: Filter multi-kriteria, **Ekspor CSV**, dan **Ekspor PDF** langsung sesuai konfigurasi filter (berisi grafik ACI & grafik NDSI secara terpisah, grafik distribusi klasifikasi per End Node, tabel ringkasan tiap End Node & lokasi penempatan, serta **kesimpulan evaluasi kategori ACI Rendah / Sedang / Tinggi** di bagian akhir laporan).
+   - **Setting**: Konfigurasi koneksi server lokal menuju Broker MQTT ChirpStack beserta daftar topic aktif.
 
 3. **Integrasi ChirpStack LoRaWAN MQTT (`paho-mqtt` + Real-Time SSE)**
    - Otomatis melakukan subscribe ke topic tiap End Node terdaftar:
      ```text
      application/<appid>/device/<devui>/event/up
      ```
-   - Mendukung penuh format JSON standar **ChirpStack v4 / v3** (`object`, `objectJSON`, maupun Base64 `data`) dan payload JSON langsung.
-   - Mendukung penyimpanan cache peta satelit lokal (`data/tiles/`) sehingga tetap berjalan mulus meskipun jaringan **100% Offline LoRaWAN** di lapangan.
+   - Mendukung penuh format JSON standar **ChirpStack v4 / v3** (`object`, `objectJSON`, Base64 `data`, maupun JSON langsung).
 
 ---
 
@@ -71,23 +73,17 @@ Nilai `classification` otomatis dipetakan ke 3 kondisi:
    chmod +x setup_rpi.sh
    ./setup_rpi.sh --systemd
    ```
-3. Buka browser dari perangkat di jaringan lokal Raspberry Pi:
+3. Buka browser dari laptop atau HP di jaringan lokal Raspberry Pi:
    ```text
    http://<IP_RASPBERRY_PI>:5000
    ```
 
 ---
 
-## Cara Menjalankan & Menguji di Windows / Laptop
+## Cara Menjalankan di Windows / Laptop
 
-1. Klik dua kali `run_windows.bat` atau jalankan lewat terminal:
-   ```powershell
-   py app.py
-   ```
-2. Buka `http://127.0.0.1:5000` di browser.
-3. Untuk menguji pengiriman paket uplink End Node secara otomatis dari terminal kedua:
-   ```powershell
-   py simulate_mqtt.py --once
-   py simulate_mqtt.py --condition threat --once
-   py simulate_mqtt.py --loop --interval 5
-   ```
+Klik dua kali `run_windows.bat` atau jalankan lewat terminal:
+```powershell
+py app.py
+```
+Lalu buka `http://127.0.0.1:5000` di browser.
