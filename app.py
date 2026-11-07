@@ -48,6 +48,7 @@ def _load_or_create_secret() -> str:
 
 app = Flask(__name__)
 app.secret_key = _load_or_create_secret()
+app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 

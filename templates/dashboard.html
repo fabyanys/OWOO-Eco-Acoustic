@@ -6,7 +6,7 @@
   <title>OWOO Command Center — Bio-Acoustic LoRaWAN Monitoring</title>
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/favicon.png') }}" />
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}" />
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/owoo.css') }}" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/owoo.css', v='2.1') }}" />
 </head>
 <body data-can-modify="{{ '1' if user.can_modify else '0' }}" data-user-role="{{ user.role }}">
   <div class="app-layout">
@@ -133,18 +133,20 @@
                 <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
               </svg>
             </div>
-            <div>
-              <div style="font-weight: 800; color: #FF758C; font-size: 13.5px;">
+            <div class="threat-banner-body">
+              <div class="threat-banner-title">
                 PERINGATAN ANCAMAN HUTAN (CHAINSAW DETECTED)
               </div>
-              <div id="globalThreatText" style="font-size: 12.5px; color: var(--text-primary);">
+              <div id="globalThreatText" class="threat-banner-desc">
                 Aktivitas gergaji mesin terdeteksi pada End Node kawasan Katingan Mentaya Project.
+              </div>
+              <div class="threat-banner-actions">
+                <button type="button" class="btn btn-sm btn-crimson" id="jumpThreatNodeBtn">
+                  Inspeksi Lokasi Ancaman
+                </button>
               </div>
             </div>
           </div>
-          <button type="button" class="btn btn-sm btn-crimson" id="jumpThreatNodeBtn">
-            Inspeksi Lokasi Ancaman
-          </button>
         </div>
 
         <!-- ================================================================
@@ -831,6 +833,6 @@
 
   <script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
   <script src="{{ url_for('static', filename='vendor/chartjs/chart.umd.min.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app.js', v='2.1') }}"></script>
 </body>
 </html>

@@ -768,6 +768,7 @@ body {
   align-items: center;
   gap: 12px;
   min-width: 0;
+  flex: 1;
   flex-wrap: wrap;
 }
 
@@ -864,11 +865,8 @@ body {
 /* Threat Alert Banner */
 .threat-banner {
   display: none;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 14px;
-  padding: 13px 18px;
+  align-items: flex-start;
+  padding: 14px 18px;
   margin-bottom: 16px;
   border-radius: var(--radius-xl);
   background: linear-gradient(90deg, rgba(255, 42, 75, 0.20) 0%, rgba(110, 12, 30, 0.22) 100%);
@@ -881,15 +879,17 @@ body {
 
 .threat-banner-info {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  align-items: flex-start;
+  gap: 13px;
   min-width: 0;
   flex: 1;
+  width: 100%;
 }
 
 .threat-icon-pulse {
   width: 36px;
   height: 36px;
+  margin-top: 1px;
   border-radius: 10px;
   background: rgba(255, 42, 75, 0.25);
   color: #FF4D6A;
@@ -898,6 +898,35 @@ body {
   justify-content: center;
   flex-shrink: 0;
   box-shadow: 0 0 14px rgba(255, 42, 75, 0.45);
+}
+
+.threat-banner-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  flex: 1;
+}
+
+.threat-banner-title {
+  font-weight: 800;
+  color: #FF758C;
+  font-size: 13.5px;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+}
+
+.threat-banner-desc {
+  font-size: 12.5px;
+  color: var(--text-primary);
+  line-height: 1.5;
+  margin-top: 3px;
+}
+
+.threat-banner-actions {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
 }
 
 /* ==========================================================================
@@ -1702,21 +1731,50 @@ body {
   }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 768px) {
   .topbar {
     padding: 10px 14px;
+    gap: 10px;
+  }
+  .topbar-left {
+    flex: 1;
+    min-width: 0;
+    flex-wrap: nowrap;
+    gap: 10px;
   }
   .topbar-title {
+    flex: 1;
+    min-width: 0;
     font-size: 15px;
+    line-height: 1.3;
   }
   .region-pill {
     display: none; /* Displayed cleanly inside map/overview cards to keep mobile topbar uncluttered */
   }
-  .role-access-pill span.role-access-mode {
-    display: none;
+  .role-access-pill {
+    display: none !important; /* Sembunyikan tulisan peran di samping jam pada HP agar nama tab luas ke kanan */
   }
+  .clock-pill {
+    font-size: 11.5px;
+    padding: 5px 9px;
+  }
+}
+
+@media (max-width: 600px) {
   .content-container {
     padding: 14px 12px 26px;
+  }
+  .threat-banner {
+    padding: 13px 14px;
+  }
+  .threat-banner-info {
+    gap: 11px;
+  }
+  .threat-banner-title {
+    font-size: 13px;
+  }
+  .threat-banner-desc {
+    font-size: 12px;
   }
   .kpi-strip {
     grid-template-columns: 1fr;
