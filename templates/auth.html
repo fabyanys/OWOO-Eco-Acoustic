@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OWOO — Login &amp; Registrasi | Eco-Acoustic LoRaWAN Monitoring</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/favicon.png') }}" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/owoo.css') }}" />
+</head>
+<body>
+  <div class="auth-wrapper">
+    <div class="auth-ambient-orb orb-1"></div>
+    <div class="auth-ambient-orb orb-2"></div>
+
+    <div class="glass-card auth-shell">
+      <!-- Left Eco-Tech Info Column -->
+      <div class="auth-hero">
+        <div>
+          <div class="brand-lockup" style="margin-bottom: 28px;">
+            <img src="{{ url_for('static', filename='img/owoo-logo.png') }}" alt="OWOO Logo" />
+            <div>
+              <div class="brand-wordmark">OWOO</div>
+              <div class="brand-tagline">Autonomous Bio-Acoustic MRV</div>
+            </div>
+          </div>
+
+          <h1>Digitizing Forest Protection with Edge AI &amp; Offline LoRaWAN</h1>
+          <p>
+            Sistem Command Center lokal berbasis Raspberry Pi &amp; ChirpStack LoRaWAN untuk pemantauan
+            indeks akustik hutan <strong>ACI</strong>, <strong>NDSI</strong>, serta deteksi dini pembalakan liar di kawasan
+            <strong>Katingan Mentaya Project</strong>.
+          </p>
+        </div>
+
+        <div class="auth-feature-list">
+          <div class="auth-feature-item">
+            <div class="auth-feature-icon">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M2 12h3l3-8 4 16 3-8h7" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <div>
+              <strong>Real-Time ACI &amp; NDSI Analytics</strong>
+              <div style="color: var(--text-secondary); font-size: 11.5px;">Pemantauan kesehatan ekosistem &amp; biodiversitas 24/7</div>
+            </div>
+          </div>
+
+          <div class="auth-feature-item">
+            <div class="auth-feature-icon">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <div>
+              <strong>3-Class Edge AI Sound Classification</strong>
+              <div style="color: var(--text-secondary); font-size: 11.5px;">Chainsaw (Threat) • Ambient Hutan (Biodiversity) • Rain/Wind (Noise)</div>
+            </div>
+          </div>
+
+          <div class="auth-feature-item">
+            <div class="auth-feature-icon">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3"/><path d="M19.4 15a8 8 0 0 0 0-6M4.6 9a8 8 0 0 0 0 6" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div>
+              <strong>ChirpStack MQTT Per-Node Security</strong>
+              <div style="color: var(--text-secondary); font-size: 11.5px;" class="mono">application/&lt;appid&gt;/device/&lt;devui&gt;/event/up</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Auth Form Column -->
+      <div class="auth-panel">
+        <div style="margin-bottom: 18px;">
+          <h2 id="authHeading" style="font-size: 21px; font-weight: 800; margin-bottom: 4px;">Masuk ke Command Center</h2>
+          <p id="authSubheading" style="color: var(--text-secondary); font-size: 12.8px;">
+            Silakan login menggunakan akun terdaftar untuk mengakses sistem monitoring.
+          </p>
+        </div>
+
+        <div class="auth-tabs">
+          <button type="button" class="auth-tab-btn active" id="tabLoginBtn" onclick="switchAuthTab('login')">
+            Login Akun
+          </button>
+          <button type="button" class="auth-tab-btn" id="tabRegisterBtn" onclick="switchAuthTab('register')">
+            Registrasi Baru
+          </button>
+        </div>
+
+        <div id="authAlert" class="auth-alert" style="margin-bottom: 14px;"></div>
+
+        <!-- LOGIN FORM -->
+        <form id="loginForm" class="auth-form">
+          <div class="form-group">
+            <label class="form-label" for="loginIdentifier">Username atau Email</label>
+            <input
+              type="text"
+              id="loginIdentifier"
+              class="form-input"
+              placeholder="Username atau Email"
+              required
+              autocomplete="username"
+            />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="loginPassword">Password</label>
+            <input
+              type="password"
+              id="loginPassword"
+              class="form-input"
+              placeholder="Masukkan password akun"
+              required
+              autocomplete="current-password"
+            />
+          </div>
+
+          <button type="submit" class="btn btn-neon" id="loginSubmitBtn" style="width: 100%; padding: 11px; margin-top: 6px;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>Masuk Sistem Monitoring</span>
+          </button>
+
+          <div style="margin-top: 8px; padding: 10px 12px; border-radius: 10px; background: rgba(0,255,136,0.04); border: 1px dashed rgba(0,255,136,0.18); font-size: 11.8px; color: var(--text-secondary);">
+            Belum memiliki akun? Klik tab <strong style="color: var(--neon-green); cursor: pointer;" onclick="switchAuthTab('register')">Registrasi Baru</strong> di atas!
+          </div>
+        </form>
+
+        <!-- REGISTER FORM -->
+        <form id="registerForm" class="auth-form" style="display: none;">
+          <div class="form-group">
+            <label class="form-label" for="regFullName">Nama Lengkap</label>
+            <input
+              type="text"
+              id="regFullName"
+              class="form-input"
+              placeholder="Nama Lengkap"
+              required
+            />
+          </div>
+
+          <div class="form-row-2">
+            <div class="form-group">
+              <label class="form-label" for="regUsername">Username</label>
+              <input
+                type="text"
+                id="regUsername"
+                class="form-input"
+                placeholder="Username"
+                required
+                autocomplete="username"
+              />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="regRole">Peran / Tim</label>
+              <select id="regRole" class="form-select">
+                <option value="Conservation Operator">Conservation Operator</option>
+                <option value="Forest Ranger">Forest Ranger</option>
+                <option value="MRV Auditor">MRV Auditor</option>
+                <option value="IoT Network Engineer">IoT Network Engineer</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="regEmail">Alamat Email</label>
+            <input
+              type="email"
+              id="regEmail"
+              class="form-input"
+              placeholder="nama@institusi.id"
+              required
+              autocomplete="email"
+            />
+          </div>
+
+          <div class="form-row-2">
+            <div class="form-group">
+              <label class="form-label" for="regPassword">Password</label>
+              <input
+                type="password"
+                id="regPassword"
+                class="form-input"
+                placeholder="Min. 6 karakter"
+                required
+                autocomplete="new-password"
+              />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="regConfirm">Konfirmasi Password</label>
+              <input
+                type="password"
+                id="regConfirm"
+                class="form-input"
+                placeholder="Ulangi password"
+                required
+                autocomplete="new-password"
+              />
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-neon" id="regSubmitBtn" style="width: 100%; padding: 11px; margin-top: 4px;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>
+            </svg>
+            <span>Daftarkan Akun ke Database</span>
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function showAlert(msg, type = 'error') {
+      const el = document.getElementById('authAlert');
+      el.textContent = msg;
+      el.className = 'auth-alert ' + type;
+    }
+
+    function clearAlert() {
+      const el = document.getElementById('authAlert');
+      el.className = 'auth-alert';
+      el.textContent = '';
+    }
+
+    function switchAuthTab(mode) {
+      clearAlert();
+      const loginForm = document.getElementById('loginForm');
+      const regForm = document.getElementById('registerForm');
+      const btnLogin = document.getElementById('tabLoginBtn');
+      const btnReg = document.getElementById('tabRegisterBtn');
+      const heading = document.getElementById('authHeading');
+      const sub = document.getElementById('authSubheading');
+
+      if (mode === 'register') {
+        loginForm.style.display = 'none';
+        regForm.style.display = 'flex';
+        btnLogin.classList.remove('active');
+        btnReg.classList.add('active');
+        heading.textContent = 'Registrasi Akun Operator';
+        sub.textContent = 'Buat akun baru yang tersimpan terenkripsi di database lokal server.';
+      } else {
+        regForm.style.display = 'none';
+        loginForm.style.display = 'flex';
+        btnReg.classList.remove('active');
+        btnLogin.classList.add('active');
+        heading.textContent = 'Masuk ke Command Center';
+        sub.textContent = 'Silakan login menggunakan akun terdaftar untuk mengakses sistem monitoring.';
+      }
+    }
+
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearAlert();
+      const btn = document.getElementById('loginSubmitBtn');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            identifier: document.getElementById('loginIdentifier').value,
+            password: document.getElementById('loginPassword').value
+          })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          showAlert(data.error || 'Gagal melakukan login.');
+          btn.disabled = false;
+          return;
+        }
+        showAlert('Login berhasil! Mengalihkan ke dashboard OWOO...', 'success');
+        window.location.href = '/';
+      } catch (err) {
+        showAlert('Gagal menghubungi server lokal.');
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById('registerForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearAlert();
+      const pw = document.getElementById('regPassword').value;
+      const pw2 = document.getElementById('regConfirm').value;
+      if (pw !== pw2) {
+        showAlert('Konfirmasi password tidak cocok.');
+        return;
+      }
+
+      const btn = document.getElementById('regSubmitBtn');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            full_name: document.getElementById('regFullName').value,
+            username: document.getElementById('regUsername').value,
+            email: document.getElementById('regEmail').value,
+            role: document.getElementById('regRole').value,
+            password: pw
+          })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          showAlert(data.error || 'Registrasi gagal.');
+          btn.disabled = false;
+          return;
+        }
+        showAlert('Akun berhasil didaftarkan! Membuka dashboard...', 'success');
+        window.location.href = '/';
+      } catch (err) {
+        showAlert('Gagal menghubungi server lokal.');
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

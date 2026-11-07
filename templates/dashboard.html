@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OWOO Command Center — Bio-Acoustic LoRaWAN Monitoring</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/favicon.png') }}" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/owoo.css') }}" />
+</head>
+<body>
+  <div class="app-layout">
+    <!-- ==================== FIXED LEFT SIDEBAR ==================== -->
+    <aside class="sidebar">
+      <div>
+        <div class="sidebar-brand">
+          <img src="{{ url_for('static', filename='img/owoo-logo.png') }}" alt="OWOO" />
+          <div class="sidebar-brand-text">
+            <div class="sidebar-brand-title">OWOO</div>
+            <div class="sidebar-brand-sub">Eco-Acoustic MRV</div>
+          </div>
+        </div>
+
+        <nav class="sidebar-nav">
+          <button type="button" class="nav-item active" data-tab="overview" onclick="switchMainTab('overview')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="9" rx="2"/>
+              <rect x="14" y="3" width="7" height="5" rx="2"/>
+              <rect x="14" y="12" width="7" height="9" rx="2"/>
+              <rect x="3" y="16" width="7" height="5" rx="2"/>
+            </svg>
+            <span>Dashboard</span>
+            <span id="navThreatBadge" class="nav-badge-alert" style="display: none;">0</span>
+          </button>
+
+          <button type="button" class="nav-item" data-tab="map" onclick="switchMainTab('map')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" stroke-linejoin="round"/>
+              <line x1="8" y1="2" x2="8" y2="18"/>
+              <line x1="16" y1="6" x2="16" y2="22"/>
+            </svg>
+            <span>Map</span>
+          </button>
+
+          <button type="button" class="nav-item" data-tab="reports" onclick="switchMainTab('reports')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="8" y1="13" x2="16" y2="13"/>
+              <line x1="8" y1="17" x2="13" y2="17"/>
+            </svg>
+            <span>Reports</span>
+          </button>
+        </nav>
+      </div>
+
+      <div class="sidebar-footer">
+        <!-- ChirpStack MQTT Status Card -->
+        <div class="mqtt-mini-box" onclick="openMqttModal()" title="Klik untuk konfigurasi MQTT ChirpStack &amp; Simulator">
+          <div class="mqtt-mini-header">
+            <span style="color: var(--text-primary);">ChirpStack MQTT</span>
+            <span class="mqtt-status-indicator">
+              <span id="sidebarMqttDot" class="status-dot standby"></span>
+              <span id="sidebarMqttState" style="color: var(--neon-green);">Standby</span>
+            </span>
+          </div>
+          <div class="mqtt-mini-details">
+            <div id="sidebarMqttBroker" class="mono" style="font-size: 11px; color: var(--text-secondary);">127.0.0.1:1883</div>
+            <div id="sidebarMqttTopics" style="font-size: 10.5px; color: var(--text-muted); margin-top: 2px;">0 End Node Topics</div>
+          </div>
+        </div>
+
+        <!-- Logged-in User Profile -->
+        <div class="user-card">
+          <div class="user-avatar">{{ (user.full_name[:2] if user and user.full_name else 'OW') | upper }}</div>
+          <div class="user-meta">
+            <div class="user-name" title="{{ user.full_name }}">{{ user.full_name }}</div>
+            <div class="user-role">{{ user.role }}</div>
+          </div>
+          <a href="/logout" class="btn btn-sm btn-crimson" title="Logout Akun" style="padding: 6px 8px;">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </a>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ==================== MAIN CONTENT AREA ==================== -->
+    <div class="main-area">
+      <!-- Top Header -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <h1 class="topbar-title" id="topbarTabTitle">Acoustic Overview Dashboard</h1>
+          <span class="region-pill">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2">
+              <path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/>
+              <circle cx="12" cy="10" r="3"/>
+            </svg>
+            Katingan Mentaya Project
+          </span>
+        </div>
+
+        <div class="topbar-right">
+          <button type="button" class="btn btn-sm btn-ghost" onclick="openMqttModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a8 8 0 0 0 0-6M4.6 9a8 8 0 0 0 0 6M22 17a12 12 0 0 0 0-10M2 7a12 12 0 0 0 0 10" stroke-linecap="round"/>
+            </svg>
+            <span>MQTT &amp; Uji Uplink</span>
+          </button>
+
+          <button type="button" class="btn btn-sm btn-neon" onclick="openAddNodeModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            <span>Tambah End Node</span>
+          </button>
+
+          <div class="clock-pill" id="liveClock">--:--:-- WIB</div>
+        </div>
+      </header>
+
+      <main class="content-container">
+        <!-- Global Threat Alert Banner -->
+        <div id="globalThreatBanner" class="threat-banner">
+          <div class="threat-banner-info">
+            <div class="threat-icon-pulse">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.3">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+            </div>
+            <div>
+              <div style="font-weight: 800; color: #FF758C; font-size: 13.5px;">
+                PERINGATAN ANCAMAN HUTAN (CHAINSAW DETECTED)
+              </div>
+              <div id="globalThreatText" style="font-size: 12.5px; color: var(--text-primary);">
+                Aktivitas gergaji mesin terdeteksi pada End Node kawasan Katingan Mentaya Project.
+              </div>
+            </div>
+          </div>
+          <button type="button" class="btn btn-sm btn-crimson" id="jumpThreatNodeBtn">
+            Inspeksi Lokasi Ancaman
+          </button>
+        </div>
+
+        <!-- ================================================================
+             TAB 1: OVERVIEW (LIVE TACTICAL MAP + ACI & NDSI CHARTS)
+             ================================================================ -->
+        <section id="tab-overview" class="tab-pane active">
+          <!-- KPI Summary Strip -->
+          <div class="kpi-strip">
+            <div class="glass-card kpi-card">
+              <div>
+                <div class="kpi-label">End Node Terdaftar</div>
+                <div class="kpi-value" id="kpiTotalNodes" style="color: var(--neon-green);">0</div>
+                <div class="kpi-sub">LoRaWAN 923 MHz Offline Network</div>
+              </div>
+              <div class="kpi-icon" style="background: var(--neon-green-soft); color: var(--neon-green);">
+                <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="3"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49"/>
+                </svg>
+              </div>
+            </div>
+
+            <div class="glass-card kpi-card">
+              <div>
+                <div class="kpi-label">Rata-Rata Indeks ACI</div>
+                <div class="kpi-value" id="kpiAvgAci" style="color: #EFFFF7;">0.00</div>
+                <div class="kpi-sub">Acoustic Complexity Index</div>
+              </div>
+              <div class="kpi-icon" style="background: rgba(0, 255, 136, 0.12); color: #5EFFB3;">
+                <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M2 12h3l3-8 4 16 3-8h7" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+            </div>
+
+            <div class="glass-card kpi-card">
+              <div>
+                <div class="kpi-label">Rata-Rata Indeks NDSI</div>
+                <div class="kpi-value" id="kpiAvgNdsi" style="color: #7DD3FC;">+0.00</div>
+                <div class="kpi-sub" id="kpiNdsiStatus">Keseimbangan Biophony</div>
+              </div>
+              <div class="kpi-icon" style="background: var(--noise-soft); color: var(--noise-cyan);">
+                <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 2a10 10 0 1 0 10 10H12V2z"/>
+                </svg>
+              </div>
+            </div>
+
+            <div class="glass-card kpi-card" id="kpiThreatCard">
+              <div>
+                <div class="kpi-label">Deteksi Ancaman (Chainsaw)</div>
+                <div class="kpi-value" id="kpiThreatNodes" style="color: var(--crimson);">0</div>
+                <div class="kpi-sub" id="kpiThreatSub">Zona Katingan Mentaya Aman</div>
+              </div>
+              <div class="kpi-icon" style="background: var(--crimson-soft); color: var(--crimson);">
+                <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                  <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <!-- Reference 2-Column Layout: Left Forest Map | Right Stacked ACI & NDSI Charts -->
+          <div class="overview-grid">
+            <!-- Left: Live Tactical Forest Map -->
+            <div class="glass-card overview-map-card">
+              <div class="map-hud-top">
+                <div class="map-hud-pill">
+                  <span class="status-dot online"></span>
+                  <span>Live Map Terkini — Katingan Mentaya</span>
+                </div>
+                <button type="button" class="btn btn-sm btn-ghost" style="pointer-events: auto; background: rgba(5,19,14,0.86);" onclick="switchMainTab('map')">
+                  Buka Peta Lengkap &rarr;
+                </button>
+              </div>
+
+              <div id="overviewMap"></div>
+
+              <div class="map-hud-bottom">
+                <div class="map-legend-bar">
+                  <span class="legend-item">
+                    <span class="badge-dot" style="background: var(--crimson); box-shadow: 0 0 7px var(--crimson);"></span>
+                    Chainsaw (Threat)
+                  </span>
+                  <span class="legend-item">
+                    <span class="badge-dot" style="background: var(--neon-green); box-shadow: 0 0 7px var(--neon-green);"></span>
+                    Ambient Hutan (Biodiversity)
+                  </span>
+                  <span class="legend-item">
+                    <span class="badge-dot" style="background: var(--noise-cyan);"></span>
+                    Rain/Wind (Noise)
+                  </span>
+                </div>
+                <button type="button" class="btn btn-sm btn-ghost" style="pointer-events: auto; background: rgba(5,19,14,0.88);" onclick="recenterOverviewMap()">
+                  Reset Fokus
+                </button>
+              </div>
+            </div>
+
+            <!-- Right: Stacked ACI & NDSI Real-Time Charts -->
+            <div class="overview-charts-stack">
+              <!-- Top Chart: Acoustic Complexity Index (ACI) -->
+              <div class="glass-card chart-card">
+                <div class="chart-header">
+                  <div>
+                    <div class="chart-title">Acoustic Complexity Index (ACI)</div>
+                    <div class="chart-subtitle">Kompleksitas bio-akustik spektral hutan secara real-time</div>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 12px;">
+                    <select id="overviewNodeFilter" class="form-select" style="width: 175px; padding: 6px 10px; font-size: 12px;" onchange="handleOverviewFilterChange()">
+                      <option value="">Semua End Node</option>
+                    </select>
+                    <div class="chart-metric-big">
+                      <div class="chart-metric-number" id="overviewLatestAci">0.76</div>
+                      <div class="chart-metric-tag">ACI Terkini</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="chart-canvas-wrap">
+                  <canvas id="aciOverviewChart"></canvas>
+                </div>
+              </div>
+
+              <!-- Bottom Chart: Normalized Difference Soundscape Index (NDSI) -->
+              <div class="glass-card chart-card">
+                <div class="chart-header">
+                  <div>
+                    <div class="chart-title">Normalized Difference Soundscape Index (NDSI)</div>
+                    <div class="chart-subtitle">Rasio Biophony (Satwa Hutan) vs Anthrophony (Gangguan Mesin) — Rentang -1 s/d +1</div>
+                  </div>
+                  <div class="chart-metric-big">
+                    <div class="chart-metric-number" id="overviewLatestNdsi" style="color: #5CE1E6;">+0.72</div>
+                    <div class="chart-metric-tag" id="overviewNdsiLabel">Biophony Dominan</div>
+                  </div>
+                </div>
+                <div class="chart-canvas-wrap">
+                  <canvas id="ndsiOverviewChart"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================================================================
+             TAB 2: MAPS (KATINGAN MENTAYA PROJECT + ADD NODE + INSPECTOR)
+             ================================================================ -->
+        <section id="tab-map" class="tab-pane">
+          <div class="glass-card map-tab-toolbar">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px;">
+              <div>
+                <div style="font-size: 15.5px; font-weight: 800;">Peta Sebaran End Node — Katingan Mentaya Project</div>
+                <div style="font-size: 12px; color: var(--text-secondary);">
+                  Klik marker atau zona heksagonal End Node pada peta untuk menampilkan ACI, NDSI, dan 3 kondisi klasifikasi audio.
+                </div>
+              </div>
+            </div>
+
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px;">
+              <select id="mapConditionFilter" class="form-select" style="width: 210px; padding: 8px 12px; font-size: 12.5px;" onchange="renderMapNodes()">
+                <option value="all">Semua Kondisi End Node</option>
+                <option value="Threat">Chainsaw — Threat</option>
+                <option value="Biodiversity">Ambient Hutan — Biodiversity</option>
+                <option value="Noise">Rain/Wind — Noise</option>
+              </select>
+
+              <button type="button" class="btn btn-ghost" onclick="recenterKatinganMap()">
+                Fokus Area Katingan Mentaya
+              </button>
+
+              <button type="button" class="btn btn-neon" onclick="openAddNodeModal()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4">
+                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                <span>Tambah End Node</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="map-workspace">
+            <!-- Full Katingan Mentaya Interactive Map -->
+            <div class="glass-card full-map-container">
+              <div id="pickCoordBanner" class="pick-coord-banner">
+                <span>Klik titik lokasi penempatan End Node pada area Katingan Mentaya Project...</span>
+                <button type="button" class="btn btn-sm" style="background:#041A11; color:#00FF88; padding:4px 10px;" onclick="cancelMapCoordinatePick()">Batal</button>
+              </div>
+              <div id="katinganMap"></div>
+            </div>
+
+            <!-- Right Inspector Panel: End Node List + Selected End Node Acoustic Detail -->
+            <div class="glass-card node-inspector-panel">
+              <div>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                  <span style="font-size: 12.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary);">
+                    Daftar Lokasi End Node (<span id="mapNodeCount">0</span>)
+                  </span>
+                  <span style="font-size: 11px; color: var(--neon-green);">Klik untuk detail</span>
+                </div>
+                <div id="mapNodeList" class="node-selector-list"></div>
+              </div>
+
+              <div class="inspector-divider"></div>
+
+              <!-- Selected Node Detail Container -->
+              <div id="nodeDetailContainer" style="display: flex; flex-direction: column; gap: 13px;">
+                <div style="text-align: center; padding: 28px 12px; color: var(--text-secondary);">
+                  Pilih salah satu End Node pada peta untuk melihat telemetri ACI, NDSI, dan klasifikasi audio.
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================================================================
+             TAB 3: REPORTS (ALL NODE REPORTS, CHARTS, SERVER LOGS & CSV)
+             ================================================================ -->
+        <section id="tab-reports" class="tab-pane">
+          <!-- Filter & CSV Export Toolbar -->
+          <div class="glass-card reports-filter-card">
+            <div class="form-group">
+              <label class="form-label">Filter End Node &amp; Lokasi</label>
+              <select id="repNodeFilter" class="form-select" onchange="loadReportsData()">
+                <option value="">Semua End Node &amp; Lokasi</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Kondisi Klasifikasi Audio</label>
+              <select id="repConditionFilter" class="form-select" onchange="loadReportsData()">
+                <option value="all">Semua Kondisi (3 Kelas)</option>
+                <option value="Threat">Chainsaw (Threat)</option>
+                <option value="Biodiversity">Ambient Hutan (Biodiversity)</option>
+                <option value="Noise">Rain/Wind (Noise)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Pencarian Lokasi / DevEUI</label>
+              <input type="text" id="repSearchInput" class="form-input" placeholder="Cari lokasi, node, DevEUI..." oninput="debouncedReportSearch()" />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Dari Tanggal</label>
+              <input type="date" id="repDateFrom" class="form-input" onchange="loadReportsData()" />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Sampai Tanggal</label>
+              <input type="date" id="repDateTo" class="form-input" onchange="loadReportsData()" />
+            </div>
+
+            <div style="display: flex; gap: 8px;">
+              <button type="button" class="btn btn-ghost" onclick="resetReportFilters()" title="Reset Filter">
+                Reset
+              </button>
+              <button type="button" class="btn btn-neon" onclick="exportReportsCsv()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                <span>Ekspor CSV</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Reports Analytics Charts -->
+          <div class="reports-charts-grid">
+            <div class="glass-card chart-card" style="min-height: 295px;">
+              <div class="chart-header">
+                <div>
+                  <div class="chart-title">Grafik Log Historis ACI &amp; NDSI</div>
+                  <div class="chart-subtitle">Rekaman indeks bio-akustik yang tersimpan di server lokal Raspberry Pi</div>
+                </div>
+                <span class="badge badge-biodiversity">
+                  <span class="badge-dot"></span>
+                  <span id="repTotalRecordsBadge">0 Log</span>
+                </span>
+              </div>
+              <div class="chart-canvas-wrap">
+                <canvas id="reportTrendChart"></canvas>
+              </div>
+            </div>
+
+            <div class="glass-card chart-card" style="min-height: 295px;">
+              <div class="chart-header">
+                <div>
+                  <div class="chart-title">Distribusi Klasifikasi per End Node</div>
+                  <div class="chart-subtitle">Chainsaw (Threat) • Ambient Hutan (Biodiversity) • Rain/Wind (Noise)</div>
+                </div>
+              </div>
+              <div class="chart-canvas-wrap">
+                <canvas id="reportClassChart"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Summary Table per End Node & Location -->
+          <div class="glass-card data-table-card">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+              <div>
+                <h3 style="font-size: 15.5px; font-weight: 800;">Ringkasan Report Tiap End Node &amp; Lokasi Penempatan</h3>
+                <p style="font-size: 12px; color: var(--text-secondary);">Rekapitulasi performa akustik dan deteksi kondisi tiap End Node di Katingan Mentaya Project</p>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table class="owoo-table">
+                <thead>
+                  <tr>
+                    <th>End Node</th>
+                    <th>Lokasi Penempatan</th>
+                    <th>Topic MQTT ChirpStack</th>
+                    <th>Total Uplink</th>
+                    <th>Avg ACI</th>
+                    <th>Avg NDSI</th>
+                    <th>Threat (Chainsaw)</th>
+                    <th>Biodiversity</th>
+                    <th>Noise</th>
+                    <th>Status Terakhir</th>
+                  </tr>
+                </thead>
+                <tbody id="nodeSummaryTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Detailed Telemetry Log Table -->
+          <div class="glass-card data-table-card">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px;">
+              <div>
+                <h3 style="font-size: 15.5px; font-weight: 800;">Log Transmisi Data End Node (Database Lokal)</h3>
+                <p style="font-size: 12px; color: var(--text-secondary);">Seluruh paket data uplink yang masuk dapat diekspor langsung ke format CSV untuk audit MRV</p>
+              </div>
+              <button type="button" class="btn btn-sm btn-neon" onclick="exportReportsCsv()">
+                Download Laporan (.CSV)
+              </button>
+            </div>
+            <div class="table-scroll" style="max-height: 390px; overflow-y: auto;">
+              <table class="owoo-table">
+                <thead>
+                  <tr>
+                    <th>Waktu Lokal</th>
+                    <th>End Node</th>
+                    <th>Lokasi Penempatan</th>
+                    <th>App ID / DevEUI</th>
+                    <th>ACI</th>
+                    <th>NDSI</th>
+                    <th>Klasifikasi Audio (Kondisi)</th>
+                    <th>Conf</th>
+                    <th>RSSI / SNR</th>
+                  </tr>
+                </thead>
+                <tbody id="reportLogsTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Physical Local Raspberry Pi Server Log Stream -->
+          <div class="glass-card data-table-card">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+              <div>
+                <h3 style="font-size: 14.5px; font-weight: 800;">File Log Server Lokal Raspberry Pi (<span class="mono" style="color: var(--neon-green);">logs/telemetry_uplinks.log</span>)</h3>
+                <p style="font-size: 11.8px; color: var(--text-secondary);">Aliran pencatatan baris demi baris pada penyimpanan lokal server</p>
+              </div>
+              <button type="button" class="btn btn-sm btn-ghost" onclick="loadReportsData()">Refresh Log</button>
+            </div>
+            <div id="localServerLogTerminal" class="server-log-terminal"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL 1: TAMBAH END NODE ==================== -->
+  <div id="addNodeModal" class="modal-backdrop">
+    <div class="glass-card modal-dialog">
+      <div class="modal-header">
+        <div>
+          <div class="modal-title">Tambah End Node LoRaWAN Baru</div>
+          <div style="font-size: 12px; color: var(--text-secondary);">
+            Daftarkan lokasi penempatan di Katingan Mentaya Project beserta kredensial ChirpStack
+          </div>
+        </div>
+        <button type="button" class="modal-close" onclick="closeAddNodeModal()">&times;</button>
+      </div>
+
+      <form id="addNodeForm" class="auth-form">
+        <div class="form-row-2">
+          <div class="form-group">
+            <label class="form-label">Nama End Node</label>
+            <input type="text" id="nodeNameInput" class="form-input" placeholder="Contoh: SylvaSense KM-05" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Lokasi Penempatan (Sektor Hutan)</label>
+            <input type="text" id="nodeLocationInput" class="form-input" placeholder="Contoh: Pos Mentaya Utara — Blok B2" required />
+          </div>
+        </div>
+
+        <div class="form-row-2">
+          <div class="form-group">
+            <label class="form-label">Latitude (Katingan Mentaya)</label>
+            <input type="number" step="any" id="nodeLatInput" class="form-input mono" value="-2.5420" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Longitude (Katingan Mentaya)</label>
+            <input type="number" step="any" id="nodeLngInput" class="form-input mono" value="113.1350" required />
+          </div>
+        </div>
+
+        <div>
+          <button type="button" class="btn btn-sm btn-ghost" style="width: 100%;" onclick="startMapCoordinatePick()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+            <span>Pilih Titik Lokasi Penempatan Langsung dari Peta Katingan Mentaya</span>
+          </button>
+        </div>
+
+        <div class="form-row-2">
+          <div class="form-group">
+            <label class="form-label">ChirpStack Application ID (<span class="mono">appid</span>)</label>
+            <input type="text" id="nodeAppIdInput" class="form-input mono" placeholder="owoo-katingan" value="owoo-katingan" oninput="updateTopicPreview()" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">ChirpStack Device EUI (<span class="mono">devui</span>)</label>
+            <input type="text" id="nodeDevEuiInput" class="form-input mono" placeholder="70b3d57ed006a105" oninput="updateTopicPreview()" required />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <label class="form-label">Kunci Unik End Node (Node Key / AppKey)</label>
+            <button type="button" style="background:none; border:none; color:var(--neon-green); font-size:11.5px; font-weight:700; cursor:pointer;" onclick="generateRandomNodeKey()">
+              + Generate Kunci Baru
+            </button>
+          </div>
+          <input type="text" id="nodeKeyInput" class="form-input mono" placeholder="32-char hex unique key per end node" required />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Preview Subscribe Topic MQTT ChirpStack</label>
+          <div id="mqttTopicPreview" class="topic-code-box">
+            application/owoo-katingan/device/&lt;devui&gt;/event/up
+          </div>
+        </div>
+
+        <div id="addNodeError" class="auth-alert"></div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px;">
+          <button type="button" class="btn btn-ghost" onclick="closeAddNodeModal()">Batal</button>
+          <button type="submit" class="btn btn-neon">Simpan &amp; Subscribe MQTT</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL 2: KONFIGURASI MQTT CHIRPSTACK & SIMULATOR ==================== -->
+  <div id="mqttModal" class="modal-backdrop">
+    <div class="glass-card modal-dialog" style="max-width: 620px;">
+      <div class="modal-header">
+        <div>
+          <div class="modal-title">ChirpStack LoRaWAN MQTT Broker &amp; Uplink Tester</div>
+          <div style="font-size: 12px; color: var(--text-secondary);">
+            Konfigurasi koneksi ke broker MQTT ChirpStack lokal di Raspberry Pi
+          </div>
+        </div>
+        <button type="button" class="modal-close" onclick="closeMqttModal()">&times;</button>
+      </div>
+
+      <form id="mqttSettingsForm" class="auth-form">
+        <div class="form-row-2">
+          <div class="form-group">
+            <label class="form-label">MQTT Broker Host / IP</label>
+            <input type="text" id="mqttHostInput" class="form-input mono" placeholder="127.0.0.1" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">MQTT Port</label>
+            <input type="number" id="mqttPortInput" class="form-input mono" placeholder="1883" required />
+          </div>
+        </div>
+
+        <div class="form-row-2">
+          <div class="form-group">
+            <label class="form-label">MQTT Username (Opsional)</label>
+            <input type="text" id="mqttUserInput" class="form-input" placeholder="Kosongkan jika anonim" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">MQTT Password (Opsional)</label>
+            <input type="password" id="mqttPassInput" class="form-input" placeholder="Kosongkan jika tanpa password" />
+          </div>
+        </div>
+
+        <label style="display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--text-secondary); cursor: pointer;">
+          <input type="checkbox" id="mqttStrictKeyCheck" style="accent-color: var(--neon-green); width: 15px; height: 15px;" />
+          <span>Wajibkan verifikasi payload <span class="mono">node_key</span> / HMAC-SHA256 pada setiap paket aplikasi</span>
+        </label>
+
+        <div style="display: flex; justify-content: flex-end;">
+          <button type="submit" class="btn btn-sm btn-neon">Simpan &amp; Hubungkan Ulang Broker</button>
+        </div>
+      </form>
+
+      <div class="inspector-divider" style="margin: 18px 0;"></div>
+
+      <!-- Quick Live Packet Simulator for Demo / Testing -->
+      <div>
+        <div style="font-size: 14px; font-weight: 800; margin-bottom: 4px;">Simulasi Pengiriman Paket End Node (Uji Real-Time)</div>
+        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">
+          Mengirim paket JSON ChirpStack (<span class="mono">ACI</span>, <span class="mono">NDSI</span>, dan <span class="mono">Klasifikasi Audio</span>) ke topic <span class="mono">application/&lt;appid&gt;/device/&lt;devui&gt;/event/up</span>:
+        </div>
+
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label class="form-label">Pilih Target End Node</label>
+          <select id="simTargetNodeSelect" class="form-select"></select>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px;">
+          <button type="button" class="btn btn-ghost" onclick="triggerQuickSimulation('biodiversity')">
+            Ambient Hutan
+          </button>
+          <button type="button" class="btn btn-crimson" onclick="triggerQuickSimulation('threat')">
+            Chainsaw (Threat)
+          </button>
+          <button type="button" class="btn btn-cyan" onclick="triggerQuickSimulation('noise')">
+            Rain/Wind (Noise)
+          </button>
+        </div>
+      </div>
+
+      <div class="inspector-divider" style="margin: 18px 0;"></div>
+
+      <div>
+        <div style="font-size: 12px; font-weight: 700; color: var(--text-secondary); margin-bottom: 6px;">
+          Daftar Topic MQTT Aktif yang Di-Subscribe Server:
+        </div>
+        <div id="mqttActiveTopicsList" class="server-log-terminal" style="max-height: 115px; font-size: 11px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Stack -->
+  <div id="toastStack" class="toast-stack"></div>
+
+  <script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+  <script src="{{ url_for('static', filename='vendor/chartjs/chart.umd.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
