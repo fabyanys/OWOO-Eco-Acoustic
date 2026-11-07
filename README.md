@@ -9,7 +9,6 @@ Sistem web monitoring lokal berbasis **Raspberry Pi** & **ChirpStack LoRaWAN** u
 1. **Autentikasi User & Database Lokal (`SQLite`)**
    - Halaman **Login** & **Registrasi Akun Baru** (`/login`) sebelum mengakses dashboard monitoring.
    - Seluruh akun operator tersimpan aman dengan password ter-hash (`Werkzeug Scrypt / PBKDF2`) di `data/owoo.db`.
-   - Akun awal default: `admin` / `owoo2026`.
 
 2. **3 Tab Navigasi Utama (Tema Dark Emerald `#061712` + Neon Green `#00FF88` + Crimson `#FF2A4B`)**
    - **Dashboard (Overview)**: Peta taktis real-time kawasan Katingan Mentaya dengan geofence poligonal bercahaya, grafik **Acoustic Complexity Index (ACI)**, dan grafik **Normalized Difference Soundscape Index (NDSI)**.
